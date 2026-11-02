@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""Read-only companion for IINA Live title/artwork (localhost only).
+
+Reads IPTVnator's Remote Control API and local content.poster_url. No Xtream
+credentials, source URLs or playlist content are returned to IINA or logged.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import ipaddress
+import json
+import socket
+import zlib
+import sqlite3
+import urllib.error
+import urllib.parse
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from contextlib import closing
+from datetime import datetime, timezone
+
+from logo import flatten_png_black
+
+DEFAULT_DB = Path.home() / ".iptvnator/databases/iptvnator.db"
+IPTVNATOR_REMOTE = "http://127.0.0.1:8765/api/remote-control/status"
+MAX_IMAGE_BYTES = 4_000_000
+
+
+def stream_id(value: str) -> int | None:
+    if not value or not value.isascii() or not value.isdigit() or len(value) > 15:
+        return None
+    number = int(value)
+    return number if 0 < number < 2**53 else None
+
+
+def remote_status() -> dict | None:
+    try:
+        with urllib.request.urlopen(IPTVNATOR_REMOTE, timeout=2.5) as response:
+            if response.status != 200:
+                return None
+            data = json.load(response)
+            return data if isinstance(data, dict) else None
+    except (OSError, ValueError, urllib.error.URLError):
+        return None
+
+
+def _db_uri(path: Path) -> str:
+    return "file:" + urllib.parse.quote(str(path), safe="/") + "?mode=ro"
+
+
+def _hint_matches(title: str, hint: str) -> bool:
+    """Allow channel-only title, or a decorated EPG title from the VLC adapter."""
+    title, hint = title.strip().casefold(), hint.strip().casefold()
+    return bool(title and hint and (hint == title or
+           any(hint.startswith(title + sep) for sep in (" · ", " | ", " — "))))
+
+
+def lookup_channel(db_path: Path, stream: int, name: str = "", title_hint: str = "") -> dict | None:
+    """Identity = Xtream numeric ID + launch title hint or active Remote name.
+
+    Never accept an ID alone: several playlists can reuse the same Xtream IDs.
+    On ambiguous duplicate IDs with distinct logos/EPG ids, refuse matching.
+    """
+    if not db_path.is_file() or (not name and not title_hint):
+        return None
+    try:
+        with closing(sqlite3.connect(_db_uri(db_path), uri=True, timeout=1.0)) as db:
+            rows = db.execute(
+                "SELECT title, poster_url, epg_channel_id FROM content "
+                "WHERE type='live' AND xtream_id=? LIMIT 150", (stream,)
+            ).fetchall()
+        matches = [(t, p, e) for t, p, e in rows if
+                   (_hint_matches(str(t or ""), title_hint) if title_hint else
+                    bool(name and str(t or "").strip().casefold() == name.strip().casefold()))]
+        if not matches:
+            return None
+        identities = {(str(t or "").strip().casefold(), str(p or "").strip(),
+                       str(e or "").strip()) for t, p, e in matches}
+        if len(identities) > 1:
+            return None  # avoid selecting the wrong provider/channel image
+        title, logo, epg_id = matches[0]
+        return {"title": str(title), "logo": str(logo or "").strip(),
+                "epg_id": str(epg_id or "").strip()}
+    except (sqlite3.DatabaseError, sqlite3.OperationalError, OSError):
+        return None
+
+
+def epg_from_sqlite(db_path: Path, channel: dict) -> dict:
+    """Read currently-airing XMLTV programme; no external API/credentials needed."""
+    empty = {"epgTitle": "", "epgStart": "", "epgEnd": ""}
+    epg_id = channel.get("epg_id", "")
+    if not db_path.is_file():
+        return empty
+    try:
+        with closing(sqlite3.connect(_db_uri(db_path), uri=True, timeout=1.0)) as db:
+            if not epg_id:
+                rows = db.execute(
+                    "SELECT DISTINCT id FROM epg_channels WHERE display_name=? LIMIT 2",
+                    (channel["title"],)
+                ).fetchall()
+                if len(rows) != 1:
+                    return empty
+                epg_id = rows[0][0]
+            row = db.execute(
+                "SELECT title, start, stop FROM epg_programs "
+                "WHERE channel_id=? AND datetime(start)<=datetime('now') "
+                "AND datetime(stop)>datetime('now') "
+                "ORDER BY start DESC LIMIT 1", (epg_id,)
+            ).fetchone()
+            if not row:
+                return empty
+            title, start, end = row
+            def iso(v: str) -> str:
+                value = str(v or "").strip().replace(" ", "T")
+                if not value:
+                    return ""
+                # XMLTV is typically UTC ISO; add Z only when tz is absent.
+                if value[-1:] not in ("Z", "z") and not (
+                    "+" in value[10:] or "-" in value[10:]
+                ):
+                    value += "Z"
+                return value
+            return {"epgTitle": str(title or ""), "epgStart": iso(start), "epgEnd": iso(end)}
+    except (sqlite3.DatabaseError, sqlite3.OperationalError, OSError):
+        return empty
+
+
+def public_image_url(url: str) -> bool:
+    """Images only from public HTTP(S) hosts; reject localhost/private net SSRF."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname or parts.username or parts.password:
+            return False
+        hostname = parts.hostname
+        if hostname.lower() in ("localhost", "localhost.localdomain") or hostname.endswith(".local"):
+            return False
+        for entry in socket.getaddrinfo(hostname, parts.port or (443 if parts.scheme == "https" else 80), type=socket.SOCK_STREAM):
+            address = ipaddress.ip_address(entry[4][0])
+            if not address.is_global:
+                return False
+        return True
+    except (ValueError, OSError, OverflowError):
+        return False
+
+
+class SafeImageRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not public_image_url(newurl):
+            raise urllib.error.HTTPError(newurl, 403, "Image redirect blocked", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def download_image(url: str) -> tuple[bytes, str] | None:
+    if not public_image_url(url):
+        return None
+    try:
+        opener = urllib.request.build_opener(SafeImageRedirect())
+        request = urllib.request.Request(url, headers={"User-Agent": "IPTVnatorLiveCompanion/0.1.1"})
+        with opener.open(request, timeout=8) as res:
+            raw_content_type = res.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            if raw_content_type not in ("image/jpeg", "image/png", "image/webp"):
+                return None
+            if int(res.headers.get("Content-Length") or "0") > MAX_IMAGE_BYTES:
+                return None
+            content = res.read(MAX_IMAGE_BYTES + 1)
+            if not content or len(content) > MAX_IMAGE_BYTES:
+                return None
+            magic_ok = (content.startswith(b"\xff\xd8\xff") or
+                        content.startswith(b"\x89PNG\r\n\x1a\n") or
+                        (content.startswith(b"RIFF") and content[8:12] == b"WEBP"))
+            if not magic_ok:
+                return None
+            if raw_content_type == "image/png":
+                try:
+                    return flatten_png_black(content), "image/png"
+                except (ValueError, zlib.error):
+                    return None  # never return transparent PNG as an opaque white tile
+            if raw_content_type == "image/webp":
+                return None  # can be transparent; only return artwork we know is opaque
+            return content, raw_content_type
+    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return None
+
+
+class CompanionHandler(BaseHTTPRequestHandler):
+    server_version = "IPTVnatorLiveCompanion/0.1.1"
+    sys_version = ""
+
+    def log_message(self, fmt, *args):
+        # No request path or URL logging; Xtream URLs/credentials stay private.
+        return
+
+    def json_response(self, code: int, payload: dict):
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def state(self, stream: int, hint: str) -> tuple[dict, dict | None]:
+        remote = remote_status() or {}
+        remote_name = str(remote.get("channelName") or "") if (
+            remote.get("isLiveView") and remote.get("portal") == "xtream") else ""
+        channel = lookup_channel(self.server.database_path, stream, remote_name, hint)
+        if not channel:
+            return {"isLiveView": True, "source": "unmatched"}, None
+        remote_is_same = bool(remote_name and remote_name.casefold() == channel["title"].casefold())
+        if remote_is_same:
+            epg = {k: remote.get(k, "") for k in ("epgTitle", "epgStart", "epgEnd")}
+            epg_source = "remote"
+        else:
+            epg = epg_from_sqlite(self.server.database_path, channel)
+            epg_source = "sqlite" if epg["epgTitle"] else "none"
+        return {"isLiveView": True, "source": epg_source,
+                "channelName": channel["title"], **epg}, channel
+
+    def do_GET(self):
+        u = urllib.parse.urlsplit(self.path)
+        if u.path == "/health":
+            return self.json_response(200, {"ok": True, "dbExists": self.server.database_path.is_file(),
+                                            "version": "0.1.1"})
+        if u.path not in ("/status", "/logo"):
+            return self.json_response(404, {"error": "not found"})
+        params = urllib.parse.parse_qs(u.query)
+        stream = stream_id(params.get("stream_id", [""])[0])
+        hint = params.get("title_hint", [""])[0].strip()[:250]
+        if stream is None:
+            return self.json_response(400, {"error": "invalid stream_id"})
+        status, channel = self.state(stream, hint)
+        matched = bool(channel)
+        if u.path == "/status":
+            return self.json_response(200, {
+                "matched": matched,
+                "isLiveView": bool(status.get("isLiveView")),
+                "source": status.get("source", "unmatched"),
+                "channelName": status.get("channelName", "") if matched else "",
+                "epgTitle": status.get("epgTitle", "") if matched else "",
+                "epgStart": status.get("epgStart", "") if matched else "",
+                "epgEnd": status.get("epgEnd", "") if matched else "",
+                "hasLogo": bool(channel and channel["logo"]),
+                "logoExt": (
+                    ".jpg" if (channel and urllib.parse.urlsplit(channel["logo"]).path.lower().endswith((".jpg", ".jpeg")))
+                    else ".png" if (channel and urllib.parse.urlsplit(channel["logo"]).path.lower().endswith(".png"))
+                    else ".img"
+                ),
+                "logoTag": hashlib.sha256(channel["logo"].encode("utf-8")).hexdigest()[:12]
+                           if channel and channel["logo"] else ""
+            })
+        if not matched or not channel["logo"]:
+            return self.json_response(404, {"error": "channel logo unavailable"})
+        result = download_image(channel["logo"])
+        if not result:
+            return self.json_response(404, {"error": "image unavailable or blocked"})
+        blob, content_type = result
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(blob)))
+        self.send_header("Cache-Control", "private, max-age=180")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(blob)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="IPTVnator Live Companion read-only local server")
+    parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--db", type=Path, default=DEFAULT_DB)
+    args = parser.parse_args()
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), CompanionHandler)
+    server.database_path = args.db.expanduser()
+    print(f"Live Companion listening on 127.0.0.1:{args.port}; DB exists={server.database_path.is_file()}", flush=True)
+    try:
+        server.serve_forever(poll_interval=0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

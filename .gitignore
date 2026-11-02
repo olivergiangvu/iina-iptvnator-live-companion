@@ -1,0 +1,14 @@
+.DS_Store
+*.log
+*.pyc
+__pycache__/
+.idea/
+.env
+*.db
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.m3u
+*.m3u8
+*.jsonl
+*.iinaplgz

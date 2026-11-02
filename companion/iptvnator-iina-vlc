@@ -1,0 +1,69 @@
+#!/bin/bash
+# IPTVnator VLC external player -> IINA (native) compatibility adapter.
+# macOS bash 3.2 compatible; PiP remains manual.
+# v1.1: ensure the array is non-empty before expanding it with set -u.
+
+set -u
+umask 077
+
+IINA='/Applications/IINA.app/Contents/MacOS/IINA'
+LOG="$HOME/Library/Logs/iptvnator-iina-vlc.log"
+
+if [[ ! -x "$IINA" ]]; then
+  printf 'IINA executable not found: %s\n' "$IINA" >&2
+  exit 127
+fi
+
+url=''
+ua=''
+referer=''
+title=''
+start=''
+args=()
+headers=()
+
+for arg in "$@"; do
+  case "$arg" in
+    :http-user-agent=*) ua="${arg#:http-user-agent=}" ;;
+    :http-referrer=*) referer="${arg#:http-referrer=}" ;;
+    :http-header=*) headers+=("${arg#:http-header=}") ;;
+    :meta-title=*) title="${arg#:meta-title=}" ;;
+    --start-time=*) start="${arg#--start-time=}" ;;
+    --extraintf=*|--rc-host=*|--rc-quiet) : ;;
+    --mpv-*) args+=("$arg") ;;
+    http://*|https://*|rtsp://*|rtmp://*|udp://*|mms://*|file://*) url="$arg" ;;
+    *) : ;;
+  esac
+done
+
+mkdir -p "$HOME/Library/Logs"
+
+if [[ -z "$url" ]]; then
+  printf '%s | status=no-stream-url | argc=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$#" >> "$LOG"
+  printf 'IPTVnator did not provide a stream URL.\n' >&2
+  exit 64
+fi
+
+[[ -n "$ua" ]] && args+=("--mpv-user-agent=$ua")
+[[ -n "$referer" ]] && args+=("--mpv-referrer=$referer")
+[[ -n "$title" ]] && args+=("--mpv-force-media-title=$title")
+[[ -n "$start" ]] && args+=("--mpv-start=$start")
+
+if (( ${#headers[@]} > 0 )); then
+  joined="${headers[0]}"
+  for ((i=1; i<${#headers[@]}; i++)); do
+    joined+=",${headers[$i]}"
+  done
+  args+=("--mpv-http-header-fields=$joined")
+fi
+
+# Log only flags/counts, never URL, tokens or header values.
+printf '%s | status=launch | user_agent=%s | referer=%s | header_count=%d | mpv_options=%d\n' \
+  "$(date '+%Y-%m-%d %H:%M:%S')" \
+  "$([[ -n "$ua" ]] && printf YES || printf NO)" \
+  "$([[ -n "$referer" ]] && printf YES || printf NO)" \
+  "${#headers[@]}" "${#args[@]}" >> "$LOG"
+
+# Native IINA window. No automatic Picture-in-Picture.
+args+=("$url")
+exec "$IINA" "${args[@]}"

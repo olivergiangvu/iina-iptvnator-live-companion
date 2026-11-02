@@ -1,0 +1,17 @@
+# Changelog
+
+## v0.1.1 — First public beta (2026-11-03)
+
+- Live EPG titles update within a playing IINA stream, including programmes with identical titles but different EPG start times. Observed in IINA 1.5.0 on macOS with IPTVnator 0.25 nightly.
+- Channel logo as an mpv attached-picture image for macOS Now Playing.
+- Transparent PNG logos are flattened onto a black background.
+- Companion on localhost port 8766, reading IPTVnator Remote Control (8765) and local SQLite in read-only mode, with SQLite EPG fallback when the IPTVnator UI selects another channel.
+- Existing VLC → IINA adapter v1.1 preserved byte-for-byte.
+- Health-verified companion upgrade.
+
+### Known limitations
+
+- macOS **Control Center title** auto-refresh has not been confirmed. The experimental track-list refresh option is OFF by default and may affect PiP.
+- Logo URLs that return 400/403/404 are not automatically replaced with an alternate channel logo (e.g. US: UP TV stream 23978).
+- Channel identification uses Xtream stream ID plus name hint; collisions across playlists with the same ID and title remain possible.
+- Local companion is macOS-specific; no HomeDocker server component is required.

@@ -1,0 +1,10 @@
+{
+  "name": "IPTVnator Live Companion",
+  "identifier": "io.github.olivergiangvu.iina.iptvnatorlivecompanion",
+  "version": "0.1.1",
+  "description": "Native Now Playing: dynamic IPTVnator Live EPG title and channel-logo artwork. No playback engine changes.",
+  "author": { "name": "Oliver Giang Vu" },
+  "entry": "main.js",
+  "permissions": ["network-request", "file-system"],
+  "allowedDomains": ["127.0.0.1", "localhost"]
+}
