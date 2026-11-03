@@ -1,3 +1,11 @@
+## 0.1.2-rc.1 — Unreleased Catch-up regression fix
+
+- Recognize REST `/timeshift/.../streamId.ts` and legacy `/streaming/timeshift.php?stream=...` URLs.
+- Accept `Channel - Selected Programme` Catch-up titles sent by IPTVnator.
+- Keep Catch-up metadata fixed to the selected archived programme; do not copy current Live EPG Now.
+- Restore channel logos for Catch-up while preserving existing Live and VOD behavior.
+- Add Catch-up JavaScript/Python regression tests; no changes to VLC → IINA wrapper v1.1.
+
 # Changelog
 
 ## v0.1.1 — First public beta (2026-11-03)
