@@ -16,6 +16,8 @@ let artworkKey = "";
 let artworkFile = "";
 let artworkRetryAt = 0;
 let polling = false;
+let queuedPoll = false;
+let artworkInFlightGeneration = -1;
 let initialMediaTitle = "";
 let lastSyncDiagnostic = "";
 let nativeRefreshBusy = false;
@@ -127,29 +129,38 @@ function invalidate() {
   lastTitle = "";
   initialMediaTitle = "";
   artworkRetryAt = 0;
+  artworkInFlightGeneration = -1;
   nativeRefreshBusy = false;
   // file-local tracks are released by mpv between media files.
   artworkFile = "";
   artworkKey = "";
 }
 async function applyArtwork(info, identity, token) {
-  if (!posterEnabled || !info.hasLogo || Date.now() < artworkRetryAt) return;
+  if (!posterEnabled || !info.hasLogo || artworkInFlightGeneration === token || Date.now() < artworkRetryAt) return;
   const key = `${identity.mode}:${identity.streamId}:${info.channelName}:${info.logoTag || ""}`;
   if (artworkKey === key) return;
-  artworkRetryAt = Date.now() + 60000;
+  artworkInFlightGeneration = token;
   const ext = [".png", ".jpg"].includes(info.logoExt) ? info.logoExt : ".img";
   const temp = `@tmp/iptvnator-logo-${Date.now()}-${token}${ext}`;
   const logoURL = companionUrl("logo", identity, initialMediaTitle);
   try {
     await limited(http.download(logoURL, temp), 11000);
-    if (generation !== token || getUrl() !== currentUrl || !file.exists(temp)) return;
+    if (generation !== token || getUrl() !== currentUrl) return;
+    if (!file.exists(temp)) {
+      debug("Artwork download returned without a readable file; retry is scheduled.");
+      return;
+    }
     const absolute = String(utils.resolvePath(temp) || "");
-    if (!absolute.startsWith("/")) return;
+    if (!absolute.startsWith("/")) {
+      debug("Artwork path is not a local absolute path; retry is scheduled.");
+      return;
+    }
     const originalVid = getMpvString("vid");
     removeOwnArtwork();
     mpv.command("video-add", [absolute, "auto+attached-picture", ART_TITLE]);
     artworkKey = key;
     artworkFile = absolute;
+    artworkRetryAt = 0;
     setTimeout(() => {
       if (generation !== token || getUrl() !== currentUrl) return;
       const found = safeTracks().some(t =>
@@ -166,6 +177,13 @@ async function applyArtwork(info, identity, token) {
   } catch (err) {
     // Provider may not supply a downloadable logo; title sync continues.
     debug("Artwork unavailable: " + (err && err.message ? err.message : "download error"));
+  } finally {
+    if (artworkInFlightGeneration === token) artworkInFlightGeneration = -1;
+    if (generation === token && artworkKey !== key) {
+      // A transient download/attachment failure should not block the next
+      // successful launch for a full minute. Retry on next regular poll.
+      artworkRetryAt = Date.now() + 8000;
+    }
   }
 }
 function requestNativeNowPlayingRefresh(ticket, url) {
@@ -202,7 +220,13 @@ function requestNativeNowPlayingRefresh(ticket, url) {
 }
 
 async function poll() {
-  if (!enabled || polling) return;
+  if (!enabled) return;
+  if (polling) {
+    // File-loaded may arrive while the previous channel's request is
+    // pending; never drop the new channel until the next 10s interval.
+    queuedPoll = true;
+    return;
+  }
   const url = getUrl();
   const identity = playbackIdentityFromUrl(url);
   if (!url || !identity) {
@@ -272,7 +296,13 @@ async function poll() {
     if (posterEnabled && !artworkKey) void applyArtwork(data, identity, ticket);
   } catch (_) {
     // No companion/IPTVnator: leave the original media title untouched.
-  } finally { polling = false; }
+  } finally {
+    polling = false;
+    if (queuedPoll) {
+      queuedPoll = false;
+      setTimeout(() => { void poll(); }, 0);
+    }
+  }
 }
 const menuEnabled = menu.item("Live EPG title sync", () => {
   enabled = !enabled;
