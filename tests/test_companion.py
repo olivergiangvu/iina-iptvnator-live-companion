@@ -93,6 +93,35 @@ class CompanionTests(unittest.TestCase):
                 '/status?stream_id=120&title_hint=US%3A%20Cartoon%20Network')))
             self.assertFalse(body['matched'])
 
+    def test_catchup_title_matching(self):
+        self.assertEqual(server.catchup_program_title('US: A&E East', 'US: A&E East - Storage Wars'), 'Storage Wars')
+        self.assertEqual(server.catchup_program_title('US: A&E East', 'US: A&E East'), '')
+        self.assertEqual(server.lookup_channel(self.db_path, 120, title_hint='US: A&E East - Storage Wars')['title'], 'US: A&E East')
+
+    def test_catchup_never_uses_live_epg(self):
+        remote={'portal':'xtream','isLiveView':True,'channelName':'US: A&E East',
+                'epgTitle':'WRONG LIVE PROGRAM'}
+        with patch.object(server,'remote_status',return_value=remote):
+            url=self.url('/status?stream_id=120&playback=catchup&title_hint=US%3A%20A%26E%20East%20-%20Storage%20Wars')
+            info=json.load(urllib.request.urlopen(url))
+            self.assertTrue(info['matched'])
+            self.assertEqual(info['mode'],'catchup')
+            self.assertEqual(info['source'],'catchup-title')
+            self.assertEqual(info['epgTitle'],'Storage Wars')
+            self.assertTrue(info['hasLogo'])
+
+    def test_catchup_survives_nonlive_remote(self):
+        with patch.object(server,'remote_status',return_value={'portal':'xtream','isLiveView':False}):
+            info=json.load(urllib.request.urlopen(self.url(
+                '/status?stream_id=120&playback=catchup&title_hint=US%3A%20A%26E%20East%20-%20Storage%20Wars')))
+            self.assertTrue(info['matched'])
+            self.assertEqual(info['epgTitle'],'Storage Wars')
+
+    def test_invalid_mode_rejected(self):
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(self.url('/status?stream_id=120&playback=movie'))
+        self.assertEqual(err.exception.code,400)
+
     def test_black_background_rgba_png(self):
         from logo import flatten_png_black
         def chunk(kind, data):
