@@ -40,7 +40,7 @@ curl -fsS http://127.0.0.1:8766/health | python3 -m json.tool
 
 In **IINA → Settings → Plugins**, install `dist/IPTVnator-Live-Companion-0.1.2.iinaplgz` and restart IINA. Enable only one version of this plugin. Configure IPTVnator's external player separately; **do not replace an existing working wrapper** during the metadata installation.
 
-Alternatively, download the signed-by-GitHub-source release package `.iinaplgz` from [v0.1.2](https://github.com/olivergiangvu/iina-iptvnator-live-companion/releases/tag/v0.1.2), but the companion still needs to be installed from the source repository.
+Alternatively, download the official release plugin package `.iinaplgz` from [v0.1.2](https://github.com/olivergiangvu/iina-iptvnator-live-companion/releases/tag/v0.1.2), but the companion still needs to be installed from the source repository.
 
 ## Upgrade from v0.1.1 / RC builds
 
