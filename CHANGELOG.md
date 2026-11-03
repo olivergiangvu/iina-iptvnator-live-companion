@@ -1,3 +1,11 @@
+## v0.1.2-rc.3 — Unreleased Catch-up title fix
+
+- Recover selected Catch-up programme from exact server-clock timestamp in Xtream `timeshift` URL when IPTVnator provides channel-only title.
+- Match imported XMLTV programme first; if missing, query configured provider's `get_simple_data_table` endpoint read-only with in-memory credentials only.
+- Source identity must be unambiguous. Validate wall-clock, cap response size and timeout, forbid redirects/proxies and cache 90 seconds.
+- Preserve Live title and logo, attached-artwork handling, VOD exclusion, and byte-identical VLC wrapper.
+- Never attach unredacted IINA log files: other plugins may expose OAuth tokens, stream usernames and passwords.
+
 ## 0.1.2-rc.2 — Unreleased Catch-up and Live regression fix
 
 - Restore Live TV and Catch-up metadata sync by removing reliance on browser `URL` / `URLSearchParams` globals inside IINA's JS runtime.
