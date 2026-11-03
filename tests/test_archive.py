@@ -63,6 +63,48 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(request.call_count,1)
         self.assertNotIn("SECRET",str(one))
 
+    def test_catchup_provider_wall_clock_supplies_broadcast_times(self):
+        # Real provider panels frequently omit Unix timestamps entirely.
+        # Programme title already resolved in RC3, but previously clocks = "".
+        rows = [{'start': '2026-11-03 05:00:00',
+                 'stop': '2026-11-03 05:30:00',
+                 'title': 'Wait Till Your Father Gets Home'}]
+        with patch.object(catchup, '_provider_rows', return_value=rows):
+            got = catchup.resolve_archive(
+                self.db, 11590, 'US: MeTV Toons', '2026-11-03:05-00')
+        self.assertEqual(got[1], 'catchup-provider')
+        self.assertEqual(got[0]['epgTitle'], 'Wait Till Your Father Gets Home')
+        self.assertEqual(got[0]['epgStart'], '2026-11-03T05:00:00Z')
+        self.assertEqual(got[0]['epgEnd'], '2026-11-03T05:30:00Z')
+        catchup._CACHE.clear()
+
+    def test_catchup_provider_wall_clock_converts_known_server_timezone(self):
+        # A UTC+7 panel's 12:00 broadcast is 05:00Z, and must display
+        # as 12:00 in IINA on a UTC+7 Mac.
+        with sqlite3.connect(self.db) as db:
+            db.execute('UPDATE playlists SET payload=?',
+                       ('{"serverTimezone":"Asia/Ho_Chi_Minh"}',))
+        with patch.object(catchup, '_provider_rows', return_value=[{
+                'start': '2026-11-03 12:00:00',
+                'end': '2026-11-03 12:30:00',
+                'title': 'Wait Till Your Father Gets Home'}]):
+            got = catchup.resolve_archive(
+                self.db, 11590, 'US: MeTV Toons', '2026-11-03:12-00')
+        self.assertEqual(got[0]['epgStart'], '2026-11-03T05:00:00Z')
+        self.assertEqual(got[0]['epgEnd'], '2026-11-03T05:30:00Z')
+        catchup._CACHE.clear()
+
+    def test_catchup_provider_missing_end_does_not_invent_broadcast_time(self):
+        with patch.object(catchup, '_provider_rows', return_value=[{
+                'start': '2026-11-03 05:00:00',
+                'title': 'Wait Till Your Father Gets Home'}]):
+            got = catchup.resolve_archive(
+                self.db, 11590, 'US: MeTV Toons', '2026-11-03:05-00')
+        self.assertEqual(got[0]['epgTitle'], 'Wait Till Your Father Gets Home')
+        self.assertEqual(got[0]['epgStart'], '')
+        self.assertEqual(got[0]['epgEnd'], '')
+        catchup._CACHE.clear()
+
     def test_ambiguous_provider_and_invalid_clock_fail_closed(self):
         self.assertIsNone(catchup.resolve_archive(
             self.db,11590,"US: MeTV Toons","nonsense"))
