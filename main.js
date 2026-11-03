@@ -27,6 +27,10 @@ function getMpvString(key) { try { return String(mpv.getString(key) || ""); } ca
  * IINA's plugin JavaScript runtime must not be assumed to implement Web APIs.
  * We never log/forward the full stream URL (it may include credentials).
  */
+function archiveClock(value) {
+  // Only the server-clock start crosses localhost; no Xtream credentials/URL.
+  return /^20\d{2}-\d{2}-\d{2}:\d{2}-\d{2}$/.test(value) ? value : "";
+}
 function playbackIdentityFromUrl(url) {
   if (!/^https?:\/\/[^/?#]+/i.test(url)) return null;
   // Remove only the authority, then split path from query. All credentials stay
@@ -40,13 +44,18 @@ function playbackIdentityFromUrl(url) {
   // Legacy Xtream archive: /streaming/timeshift.php?...&stream=123&...
   if (/\/streaming\/timeshift\.php\/?$/i.test(path)) {
     const match = query.match(/(?:^|&)stream=(\d{1,15})(?:&|$)/i);
+    const startMatch = query.match(/(?:^|&)start=([^&]+)/i);
+    let start = "";
+    if (startMatch) {
+      try { start = decodeURIComponent(startMatch[1]); } catch (_) {}
+    }
     return match && Number(match[1]) > 0
-      ? { streamId: match[1], mode: "catchup" } : null;
+      ? { streamId: match[1], mode: "catchup", archiveStart: archiveClock(start) } : null;
   }
   // REST Xtream archive: /timeshift/user/pass/minutes/start/id.ts (or m3u8)
-  const archive = path.match(/\/timeshift\/[^/]+\/[^/]+\/\d+\/[^/]+\/(\d{1,15})\.(?:ts|m3u8)$/i);
-  if (archive && Number(archive[1]) > 0) {
-    return { streamId: archive[1], mode: "catchup" };
+  const archive = path.match(/\/timeshift\/[^/]+\/[^/]+\/\d+\/([^/]+)\/(\d{1,15})\.(?:ts|m3u8)$/i);
+  if (archive && Number(archive[2]) > 0) {
+    return { streamId: archive[2], mode: "catchup", archiveStart: archiveClock(archive[1]) };
   }
   if (/\/timeshift\//i.test(path)) return null;
 
@@ -60,7 +69,9 @@ function companionUrl(endpoint, identity, launchTitle) {
   const id = encodeURIComponent(identity.streamId);
   const mode = encodeURIComponent(identity.mode);
   const hint = encodeURIComponent(launchTitle || "");
-  return API + "/" + endpoint + "?stream_id=" + id + "&playback=" + mode + "&title_hint=" + hint;
+  const start = identity.mode === "catchup" && identity.archiveStart
+    ? "&archive_start=" + encodeURIComponent(identity.archiveStart) : "";
+  return API + "/" + endpoint + "?stream_id=" + id + "&playback=" + mode + "&title_hint=" + hint + start;
 }
 function signature(obj) {
   return [obj.channelName || "", obj.epgStart || "", obj.epgEnd || "", obj.epgTitle || ""].join("\u001f");
