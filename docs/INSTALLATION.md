@@ -82,12 +82,17 @@ shasum -a 256 "$HOME/Downloads/iptvnator-iina-vlc"
 # 12d9be1a61f3aa8545de853df479c4c8d18979e2909b244f7248e1237550f623
 ```
 
-Then, **only if `~/.local/bin/iptvnator-iina-vlc` does not exist**, install it:
+Install it with an explicit non-overwrite guard (the `main` checkout's
+`install-launcher.sh` provides the same protection):
 
 ```bash
-mkdir -p "$HOME/.local/bin"
-install -m 755 "$HOME/Downloads/iptvnator-iina-vlc" \
-  "$HOME/.local/bin/iptvnator-iina-vlc"
+TARGET="$HOME/.local/bin/iptvnator-iina-vlc"
+if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
+  echo "Existing launcher detected; leaving it unchanged: $TARGET"
+else
+  mkdir -p "$HOME/.local/bin"
+  install -m 755 "$HOME/Downloads/iptvnator-iina-vlc" "$TARGET"
+fi
 ```
 
 **Metadata Companion:** extract the archive to a permanent directory:
