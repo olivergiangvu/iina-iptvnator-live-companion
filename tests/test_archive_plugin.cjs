@@ -33,6 +33,9 @@ async function verify(url,kind) {
     assert(!raw.includes("SECRET"));
   }
   assert(added.some(x=>x[0]==="file-local-options/force-media-title"&&x[1].includes("Wait Till Your Father Gets Home")));
+  assert(added.some(x=>x[0]==="file-local-options/force-media-title" &&
+    /\(\d{1,2}:\d{2}–\d{1,2}:\d{2}\)/.test(x[1])),
+    "archived show title must include scheduled broadcast hours");
   console.log("PASS:",kind,"channel-only title and sanitized archive time");
 }
 (async()=>{
