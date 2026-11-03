@@ -1,5 +1,6 @@
 """Catch-up archive resolver regression tests, never using real provider secrets."""
 import base64
+import datetime as dt
 import sqlite3
 import sys
 import tempfile
@@ -75,6 +76,62 @@ class ArchiveTests(unittest.TestCase):
         with patch.object(catchup, "_provider_rows", side_effect=AssertionError):
             self.assertIsNone(catchup.resolve_archive(
                 self.db,11590,"US: MeTV Toons","2026-11-03:05-00"))
+
+    def test_live_schedule_rolls_over_without_new_ip_tvnator_remote(self):
+        catchup._LIVE_CACHE.clear()
+        # Two programme windows delivered once by the provider; select each
+        # by the actual wall clock without requiring a UI click.
+        items = [
+            {'start': '2026-11-03 05:00:00', 'stop': '2026-11-03 05:30:00',
+             'title': 'First Show'},
+            {'start': '2026-11-03 05:30:00', 'stop': '2026-11-03 06:00:00',
+             'title': 'Second Show'}
+        ]
+        with patch.object(catchup, '_provider_rows', return_value=items) as fetch:
+            one = catchup.resolve_live(
+                self.db, 11590, 'US: MeTV Toons',
+                dt.datetime(2026, 11, 3, 5, 29, tzinfo=dt.timezone.utc))
+            two = catchup.resolve_live(
+                self.db, 11590, 'US: MeTV Toons',
+                dt.datetime(2026, 11, 3, 5, 30, tzinfo=dt.timezone.utc))
+        self.assertEqual(one[0]['epgTitle'], 'First Show')
+        self.assertEqual(two[0]['epgTitle'], 'Second Show')
+        self.assertEqual(fetch.call_count, 1)
+        catchup._LIVE_CACHE.clear()
+
+    def test_live_provider_cache_refreshes_when_last_show_expires(self):
+        catchup._LIVE_CACHE.clear()
+        first = [{'start': '2026-11-03 05:00:00',
+                  'stop': '2026-11-03 05:30:00', 'title': 'First Show'}]
+        second = [{'start': '2026-11-03 05:30:00',
+                   'stop': '2026-11-03 06:00:00', 'title': 'Second Show'}]
+        with patch.object(catchup, '_provider_rows', side_effect=[first, second]) as fetch:
+            with patch.object(catchup.time, 'monotonic', return_value=1000):
+                one = catchup.resolve_live(
+                    self.db, 11590, 'US: MeTV Toons',
+                    dt.datetime(2026, 11, 3, 5, 29, tzinfo=dt.timezone.utc))
+            with patch.object(catchup.time, 'monotonic', return_value=1041):
+                two = catchup.resolve_live(
+                    self.db, 11590, 'US: MeTV Toons',
+                    dt.datetime(2026, 11, 3, 5, 30, tzinfo=dt.timezone.utc))
+        self.assertEqual(one[0]['epgTitle'], 'First Show')
+        self.assertEqual(two[0]['epgTitle'], 'Second Show')
+        self.assertEqual(fetch.call_count, 2)
+        catchup._LIVE_CACHE.clear()
+
+    def test_live_provider_schedule_rejects_ambiguous_clock_without_zone(self):
+        catchup._LIVE_CACHE.clear()
+        with sqlite3.connect(self.db) as db:
+            db.execute("UPDATE playlists SET payload='{}'")
+        with patch.object(catchup, '_provider_rows',
+                          return_value=[{'start':'2026-11-03 05:00:00',
+                                         'stop':'2026-11-03 05:30:00',
+                                         'title':'Ambiguous Show'}]):
+            found=catchup.resolve_live(
+                self.db, 11590, 'US: MeTV Toons',
+                dt.datetime(2026, 11, 3, 5, 15, tzinfo=dt.timezone.utc))
+        self.assertIsNone(found)
+        catchup._LIVE_CACHE.clear()
 
     def test_panel_wall_clock_without_timezone(self):
         with sqlite3.connect(self.db) as db:
