@@ -147,4 +147,6 @@ IPTVnator native Electron/SQLite                         IINA 1.5.0
 - mpv `video-add`/`attached-picture`: https://mpv.io/manual/stable/
 - EP+ POC: https://github.com/olivergiangvu/iina-episode-info-plus/blob/fix/epplus-beta4-now-playing-poster/epplus-now-playing.js
 - IPTVnator content schema: https://github.com/4gray/iptvnator/blob/7a390f4/libs/shared/database/src/lib/schema.ts
-\n\n**RC4 speed improvements (Mac validation pending):** retain RC3 archive-title resolution, but queue new-channel synchronization immediately after an old HTTP call completes; retry a failed logo on the next polling slot instead of blocking 60 seconds; cache successful normalized channel logo in bounded server memory for 12 hours; and avoid needless Remote API / EPG calls for the independent `/logo` endpoint. No changes to the VLC→IINA wrapper or Live/Catch-up URL recognition.\n
+
+
+**RC4 speed improvements (Mac validation pending):** retain RC3 archive-title resolution, but queue new-channel synchronization immediately after an old HTTP call completes; retry a failed logo on the next polling slot instead of blocking 60 seconds; cache successful normalized channel logo in bounded server memory for 12 hours; and avoid needless Remote API / EPG calls for the independent `/logo` endpoint. No changes to the VLC→IINA wrapper or Live/Catch-up URL recognition.
