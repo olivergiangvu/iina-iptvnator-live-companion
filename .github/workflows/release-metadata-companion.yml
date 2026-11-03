@@ -1,0 +1,48 @@
+name: Attach Python Metadata Companion to stable release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  attach-metadata:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify archive and source integrity
+        run: |
+          python3 -m unittest discover -s tests -p 'test_package_companion.py' -v
+          python3 scripts/package-companion.py
+          python3 - <<'PY'
+          import json, pathlib, tarfile
+          version=json.loads(pathlib.Path('Info.json').read_text())['version']
+          assert version=='0.1.2', 'Release asset is only for the stable 0.1.2 tag'
+          path=pathlib.Path('dist/IPTVnator-Metadata-Companion-0.1.2.tar.gz')
+          with tarfile.open(path, 'r:gz') as t:
+              names=t.getnames()
+              assert len(names)==8
+              assert all(name.startswith('IPTVnator-Metadata-Companion-0.1.2/') for name in names)
+              assert not any('iptvnator-iina-vlc' in name or name.endswith('.db') for name in names)
+          print('Independent metadata source package verified')
+          PY
+      - name: Attach Metadata Companion archive without replacing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.1.2 --repo "$GITHUB_REPOSITORY" > /dev/null
+          if gh release view v0.1.2 --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq 'IPTVnator-Metadata-Companion-0.1.2.tar.gz'; then
+            echo "Existing metadata asset preserved"
+          else
+            gh release upload v0.1.2 \
+              dist/IPTVnator-Metadata-Companion-0.1.2.tar.gz \
+              --repo "$GITHUB_REPOSITORY"
+            echo "Metadata Companion attached as third release asset"
+          fi
