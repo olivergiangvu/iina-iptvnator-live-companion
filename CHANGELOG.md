@@ -1,3 +1,11 @@
+## v0.1.2-rc.6 — Unreleased Catch-up broadcast clock fix
+
+- Restore actual broadcast start/end clock in Catch-up titles from Xtream `start`/`stop` or `start`/`end` when Unix timestamps are not provided.
+- Convert source wall-clock times using the persisted Xtream panel timezone to UTC, then format in IINA's local time.
+- Avoid inventing clock values when the panel timezone or end time is missing, and reject mismatched decorated launch titles.
+- Preserve RC5 automatic Live EPG rollover, RC4 logo performance, RC3 archived programme lookup and the unchanged VLC wrapper.
+- Add Python fixture coverage for UTC, Asia/Ho_Chi_Minh, missing end, and decorated title, plus JavaScript title-format verification.
+
 ## v0.1.2-rc.5 — Unreleased autonomous Live EPG
 
 - Verify the IPTVnator Remote API programme time range against the real UTC clock; never trust completed programmes.
