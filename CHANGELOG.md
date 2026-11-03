@@ -1,3 +1,11 @@
+## v0.1.2-rc.5 — Unreleased autonomous Live EPG
+
+- Verify the IPTVnator Remote API programme time range against the real UTC clock; never trust completed programmes.
+- On stale/missing Remote EPG, use current read-only XMLTV programme or the matching configured Xtream provider's schedule.
+- Cache entire provider schedule (up to five minutes), selecting the current programme on every poll; recheck sooner when the cached schedule has ended.
+- Preserve RC4 low-latency Live logo behaviour and RC3 archived Catch-up metadata, plus VOD/Trakt isolation and byte-identical wrapper.
+- Add tests for stale Remote UI, exact programme boundary transitions and safe timezone handling.
+
 ## v0.1.2-rc.4 — Unreleased Live latency candidate
 
 - Queue a new-channel request if a previous poll is in flight, preventing a missed file-loaded event and further 10-second wait.
