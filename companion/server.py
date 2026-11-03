@@ -279,11 +279,21 @@ class CompanionHandler(BaseHTTPRequestHandler):
             selected_program = catchup_program_title(channel["title"], hint)
             epg = {"epgTitle": selected_program, "epgStart": "", "epgEnd": ""}
             epg_source = "catchup-title" if selected_program else "catchup-channel"
-            if not selected_program and archive_start:
+            if archive_start:
                 resolved = resolve_archive(self.server.database_path, stream,
                                            channel["title"], archive_start)
                 if resolved:
-                    epg, epg_source = resolved
+                    scheduled, scheduled_source = resolved
+                    if not selected_program:
+                        epg, epg_source = scheduled, scheduled_source
+                    elif selected_program.strip().casefold() == str(
+                            scheduled.get("epgTitle", "")).strip().casefold():
+                        # When a caller explicitly supplies a selected show,
+                        # retain that title, but also expose its real broadcast
+                        # times if the verified schedule agrees.
+                        epg["epgStart"] = scheduled.get("epgStart", "")
+                        epg["epgEnd"] = scheduled.get("epgEnd", "")
+                        epg_source = "catchup-title-scheduled"
         else:
             # IPTVnator's Remote API can keep returning a completed programme
             # until its UI is clicked. Never trust stale EPG clock information.
