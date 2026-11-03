@@ -1,18 +1,19 @@
-# IPTVnator Live Companion v0.1.1 — First Public Beta
+# v0.1.1 — First Public Beta (2026-11-03)
 
-Native IINA 1.5.0 companion for IPTVnator 0.25 nightly on macOS.
+Historical release notes for the [v0.1.1 tag](https://github.com/olivergiangvu/iina-iptvnator-live-companion/releases/tag/v0.1.1). These notes describe the original beta, **not** the current stable feature set.
 
-**Highlights**
-- Dynamic Live TV EPG title in IINA, with programme start/end times (verified on macOS).
-- Channel logo in macOS Now Playing using mpv `attached-picture`.
-- Black background for transparent PNG channel logos.
-- Non-destructive VLC → IINA wrapper v1.1 compatibility; manual PiP unchanged.
-- Local Python companion with read-only SQLite lookup and EPG fallback.
+## Included in the beta
 
-**Install**
+- Live TV programme titles and broadcast hours in IINA.
+- Channel logo in macOS Now Playing through mpv attached-picture.
+- Transparent PNG logos normalized onto black.
+- Read-only Python Companion on localhost and unchanged VLC → IINA launcher v1.1.
 
-Download `IPTVnator-Live-Companion-0.1.1.iinaplgz` below and follow the [README](https://github.com/olivergiangvu/iina-iptvnator-live-companion#readme) for installing the localhost companion and IINA plugin.
+## Beta limitations
 
-**Known limitations**: Control Center title update on programme boundary is not independently verified; experimental refresh is opt-in. Broken upstream channel logo URLs have no automatic alternate-channel fallback. Windows/Linux and non-Xtream sources are not covered.
+- Live EPG did not yet reliably transition without interacting with IPTVnator.
+- Full Xtream Catch-up programme/time support arrived in v0.1.2.
+- macOS Control Center title refresh was dependent on IINA; experimental refresh remained opt-in.
+- Invalid provider logo URLs had no alternate-channel fallback.
 
-**Version**: v0.1.1 · **License**: MIT · **Source**: `main` branch.
+For new installations use the [current README](../README.md) and [v0.1.2 stable release](https://github.com/olivergiangvu/iina-iptvnator-live-companion/releases/tag/v0.1.2). To reproduce the beta, use its immutable **v0.1.1 tag**, not today's `main`.
