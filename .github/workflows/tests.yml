@@ -1,0 +1,40 @@
+name: Tests
+on:
+  push:
+    branches: [main, 'fix/**']
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Python regression tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: JavaScript regression tests
+        run: |
+          node tests/test_plugin.cjs
+          node tests/test_catchup.cjs
+          node tests/test_archive_plugin.cjs
+      - name: Package and verify IINA plugin
+        run: |
+          python3 scripts/package-plugin.py
+          python3 - <<'PY'
+          import json, pathlib, zipfile
+          p=next(pathlib.Path('dist').glob('*0.1.2-rc.3.iinaplgz'))
+          with zipfile.ZipFile(p) as z:
+              assert set(z.namelist()) == {'Info.json','main.js'}
+              assert json.loads(z.read('Info.json'))['version']=='0.1.2-rc.3'
+          print('Plugin archive verified')
+          PY
+      - name: Protect unchanged VLC wrapper
+        run: |
+          echo '12d9be1a61f3aa8545de853df479c4c8d18979e2909b244f7248e1237550f623  companion/iptvnator-iina-vlc' | sha256sum -c
