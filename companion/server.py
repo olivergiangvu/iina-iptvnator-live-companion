@@ -25,7 +25,7 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 
 from logo import flatten_png_black
-from catchup import resolve_archive
+from catchup import resolve_archive, resolve_live
 
 DEFAULT_DB = Path.home() / ".iptvnator/databases/iptvnator.db"
 IPTVNATOR_REMOTE = "http://127.0.0.1:8765/api/remote-control/status"
@@ -137,6 +137,21 @@ def epg_from_sqlite(db_path: Path, channel: dict) -> dict:
         return empty
 
 
+def current_epg(epg: dict, when: datetime | None = None) -> bool:
+    """Only trust programmes whose start/end straddle the actual current UTC."""
+    if not str(epg.get("epgTitle") or "").strip():
+        return False
+    try:
+        begin = datetime.fromisoformat(str(epg.get("epgStart") or "").replace("Z", "+00:00"))
+        end = datetime.fromisoformat(str(epg.get("epgEnd") or "").replace("Z", "+00:00"))
+        if begin.tzinfo is None or end.tzinfo is None:
+            return False
+        now = when or datetime.now(timezone.utc)
+        return begin.astimezone(timezone.utc) <= now < end.astimezone(timezone.utc)
+    except (ValueError, TypeError, OverflowError):
+        return False
+
+
 def public_image_url(url: str) -> bool:
     """Images only from public HTTP(S) hosts; reject localhost/private net SSRF."""
     try:
@@ -167,7 +182,7 @@ def download_image(url: str) -> tuple[bytes, str] | None:
         return None
     try:
         opener = urllib.request.build_opener(SafeImageRedirect())
-        request = urllib.request.Request(url, headers={"User-Agent": "IPTVnatorLiveCompanion/0.1.2-rc.4"})
+        request = urllib.request.Request(url, headers={"User-Agent": "IPTVnatorLiveCompanion/0.1.2-rc.5"})
         with opener.open(request, timeout=8) as res:
             raw_content_type = res.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
             if raw_content_type not in ("image/jpeg", "image/png", "image/webp"):
@@ -233,7 +248,7 @@ def catchup_program_title(channel_title: str, launch_title: str) -> str:
 
 
 class CompanionHandler(BaseHTTPRequestHandler):
-    server_version = "IPTVnatorLiveCompanion/0.1.2-rc.4"
+    server_version = "IPTVnatorLiveCompanion/0.1.2-rc.5"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -270,13 +285,27 @@ class CompanionHandler(BaseHTTPRequestHandler):
                 if resolved:
                     epg, epg_source = resolved
         else:
+            # IPTVnator's Remote API can keep returning a completed programme
+            # until its UI is clicked. Never trust stale EPG clock information.
             remote_is_same = bool(remote_name and remote_name.casefold() == channel["title"].casefold())
-            if remote_is_same:
-                epg = {k: remote.get(k, "") for k in ("epgTitle", "epgStart", "epgEnd")}
-                epg_source = "remote"
+            remote_epg = {k: remote.get(k, "") for k in ("epgTitle", "epgStart", "epgEnd")}
+            if remote_is_same and current_epg(remote_epg):
+                epg, epg_source = remote_epg, "remote"
             else:
-                epg = epg_from_sqlite(self.server.database_path, channel)
-                epg_source = "sqlite" if epg["epgTitle"] else "none"
+                local = epg_from_sqlite(self.server.database_path, channel)
+                if current_epg(local):
+                    epg, epg_source = local, "sqlite"
+                else:
+                    updated = resolve_live(self.server.database_path, stream, channel["title"])
+                    if updated:
+                        epg, epg_source = updated
+                    elif remote_is_same and remote_epg.get("epgTitle"):
+                        # Do not invent a current programme if both guides are
+                        # missing. Keep last known title, explicitly mark stale.
+                        epg, epg_source = remote_epg, "remote-stale"
+                    else:
+                        epg = {"epgTitle": "", "epgStart": "", "epgEnd": ""}
+                        epg_source = "none"
         return {"isLiveView": True, "mode": playback, "source": epg_source,
                 "channelName": channel["title"], **epg}, channel
 
@@ -284,7 +313,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
         u = urllib.parse.urlsplit(self.path)
         if u.path == "/health":
             return self.json_response(200, {"ok": True, "dbExists": self.server.database_path.is_file(),
-                                            "version": "0.1.2-rc.4"})
+                                            "version": "0.1.2-rc.5"})
         if u.path not in ("/status", "/logo"):
             return self.json_response(404, {"error": "not found"})
         params = urllib.parse.parse_qs(u.query)
