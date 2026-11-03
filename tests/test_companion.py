@@ -157,6 +157,34 @@ class CompanionTests(unittest.TestCase):
             self.assertEqual(info['epgTitle'],'Storage Wars')
             self.assertTrue(info['hasLogo'])
 
+    def test_decorated_catchup_title_includes_verified_broadcast_window(self):
+        scheduled = ({'epgTitle': 'Storage Wars',
+                      'epgStart': '2026-11-03T05:00:00Z',
+                      'epgEnd': '2026-11-03T05:30:00Z'}, 'catchup-provider')
+        with patch.object(server, 'resolve_archive', return_value=scheduled):
+            out = json.load(urllib.request.urlopen(self.url(
+                '/status?stream_id=120&playback=catchup&'
+                'title_hint=US%3A%20A%26E%20East%20-%20Storage%20Wars&'
+                'archive_start=2026-11-03%3A05-00')))
+        self.assertTrue(out['matched'])
+        self.assertEqual(out['epgTitle'], 'Storage Wars')
+        self.assertEqual(out['source'], 'catchup-title-scheduled')
+        self.assertEqual(out['epgStart'], '2026-11-03T05:00:00Z')
+        self.assertEqual(out['epgEnd'], '2026-11-03T05:30:00Z')
+
+    def test_decorated_catchup_rejects_unrelated_schedule_times(self):
+        scheduled = ({'epgTitle': 'Completely Different Show',
+                      'epgStart': '2026-11-03T05:00:00Z',
+                      'epgEnd': '2026-11-03T05:30:00Z'}, 'catchup-provider')
+        with patch.object(server, 'resolve_archive', return_value=scheduled):
+            out = json.load(urllib.request.urlopen(self.url(
+                '/status?stream_id=120&playback=catchup&'
+                'title_hint=US%3A%20A%26E%20East%20-%20Storage%20Wars&'
+                'archive_start=2026-11-03%3A05-00')))
+        self.assertEqual(out['epgTitle'], 'Storage Wars')
+        self.assertEqual(out['epgStart'], '')
+        self.assertEqual(out['epgEnd'], '')
+
     def test_catchup_survives_nonlive_remote(self):
         with patch.object(server,'remote_status',return_value={'portal':'xtream','isLiveView':False}):
             info=json.load(urllib.request.urlopen(self.url(
