@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.2 — Stable (2026-11-03)
+
+- First stable release tested on IINA 1.5.0 with IPTVnator Xtream Live and Catch-up.
+- Live titles auto-update across programme boundaries without clicking IPTVnator: validate current Remote EPG; fall back to read-only XMLTV and cached provider schedule.
+- Catch-up REST/legacy timeshift support with historical programme identity and real scheduled start/end, converted to local time when source timezone is reliable.
+- Native IINA/mpv channel artwork in Now Playing; optimized cache, retry and fast path for repeated channel launches.
+- Protect Live/VOD isolation, EP+/Trakt, PiP and byte-identical VLC → IINA wrapper v1.1.
+- Security: localhost-only, read-only SQLite, provider credentials kept server-side, bounded remote EPG/image downloads.
+- Automated Python and JavaScript tests, GitHub Actions and release artifact verification.
+
 ## v0.1.1 — First public beta (2026-11-03)
 
 - Live EPG titles update within a playing IINA stream, including programmes with identical titles but different EPG start times. Observed in IINA 1.5.0 on macOS with IPTVnator 0.25 nightly.

@@ -32,7 +32,7 @@ const vars = {
   setInterval:fn=>{interval=fn;return 1;},
   setTimeout:(fn,ms)=>setTimeout(fn,Math.min(ms,20)),
   clearTimeout,
-  URL, Date, Promise,
+  Date, Promise,
 };
 vm.runInNewContext(source,vars,{filename:'main.js'});
 const sleep = ms => new Promise(r=>setTimeout(r,ms));

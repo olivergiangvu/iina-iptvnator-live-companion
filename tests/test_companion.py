@@ -2,6 +2,7 @@
 from __future__ import annotations
 import importlib.util
 import json
+from datetime import datetime, timedelta, timezone
 import sqlite3
 import sys
 import struct
@@ -61,7 +62,9 @@ class CompanionTests(unittest.TestCase):
 
     def test_status_does_not_return_logo_credentials(self):
         status = {'portal':'xtream','isLiveView':True,'channelName':'US: A&E East',
-                  'epgTitle':'Storage Wars','epgStart':'2026-11-02T15:30:00Z','epgEnd':'2026-11-02T16:00:00Z'}
+                  'epgTitle':'Storage Wars',
+                  'epgStart':(datetime.now(timezone.utc)-timedelta(minutes=5)).isoformat(),
+                  'epgEnd':(datetime.now(timezone.utc)+timedelta(minutes=25)).isoformat()}
         with patch.object(server,'remote_status',return_value=status):
             body = urllib.request.urlopen(self.url('/status?stream_id=120')).read().decode()
             value = json.loads(body)
@@ -72,6 +75,50 @@ class CompanionTests(unittest.TestCase):
             self.assertNotIn('username',body)
             bad = json.load(urllib.request.urlopen(self.url('/status?stream_id=122')))
             self.assertFalse(bad['matched'])
+
+    def test_expired_remote_epg_replaced_by_current_sqlite_without_ui_click(self):
+        # Simulates Remote API retaining the old EPG until IPTVnator is clicked.
+        now = datetime.now(timezone.utc)
+        stale = {'portal': 'xtream', 'isLiveView': True,
+                 'channelName': 'US: A&E East', 'epgTitle': 'Old Show',
+                 'epgStart': (now - timedelta(minutes=60)).isoformat(),
+                 'epgEnd': (now - timedelta(minutes=30)).isoformat()}
+        with patch.object(server, 'remote_status', return_value=stale):
+            out = json.load(urllib.request.urlopen(
+                self.url('/status?stream_id=120&playback=live&title_hint=US%3A%20A%26E%20East')))
+        self.assertTrue(out['matched'])
+        self.assertEqual(out['source'], 'sqlite')
+        self.assertEqual(out['epgTitle'], 'Local Show')
+
+    def test_expired_remote_uses_fresh_xtream_schedule_when_sqlite_absent(self):
+        now = datetime.now(timezone.utc)
+        stale = {'portal': 'xtream', 'isLiveView': True,
+                 'channelName': 'US: A&E East', 'epgTitle': 'Old Show',
+                 'epgStart': (now - timedelta(minutes=90)).isoformat(),
+                 'epgEnd': (now - timedelta(minutes=60)).isoformat()}
+        show = {'epgTitle': 'New Show',
+                'epgStart': (now - timedelta(minutes=3)).isoformat(),
+                'epgEnd': (now + timedelta(minutes=22)).isoformat()}
+        empty = {'epgTitle': '', 'epgStart': '', 'epgEnd': ''}
+        with patch.object(server, 'remote_status', return_value=stale), \
+             patch.object(server, 'epg_from_sqlite', return_value=empty), \
+             patch.object(server, 'resolve_live', return_value=(show, 'live-provider')) as resolver:
+            out = json.load(urllib.request.urlopen(
+                self.url('/status?stream_id=120&playback=live&title_hint=US%3A%20A%26E%20East')))
+        self.assertEqual(out['source'], 'live-provider')
+        self.assertEqual(out['epgTitle'], 'New Show')
+        resolver.assert_called_once()
+
+    def test_current_epg_interval_requires_valid_times(self):
+        now = datetime.now(timezone.utc)
+        programme = {'epgTitle': 'New Show',
+                     'epgStart': (now - timedelta(minutes=5)).isoformat(),
+                     'epgEnd': (now + timedelta(minutes=5)).isoformat()}
+        self.assertTrue(server.current_epg(programme, now))
+        self.assertFalse(server.current_epg({**programme,
+            'epgEnd': (now - timedelta(seconds=1)).isoformat()}, now))
+        self.assertFalse(server.current_epg({**programme, 'epgEnd': ''}, now))
+        self.assertFalse(server.current_epg({**programme, 'epgTitle': ''}, now))
 
     def test_status_disabled_on_vod(self):
         with patch.object(server,'remote_status',return_value={'portal':'xtream','isLiveView':False,'channelName':'US: A&E East'}):
@@ -92,6 +139,86 @@ class CompanionTests(unittest.TestCase):
             body = json.load(urllib.request.urlopen(self.url(
                 '/status?stream_id=120&title_hint=US%3A%20Cartoon%20Network')))
             self.assertFalse(body['matched'])
+
+    def test_catchup_title_matching(self):
+        self.assertEqual(server.catchup_program_title('US: A&E East', 'US: A&E East - Storage Wars'), 'Storage Wars')
+        self.assertEqual(server.catchup_program_title('US: A&E East', 'US: A&E East'), '')
+        self.assertEqual(server.lookup_channel(self.db_path, 120, title_hint='US: A&E East - Storage Wars')['title'], 'US: A&E East')
+
+    def test_catchup_never_uses_live_epg(self):
+        remote={'portal':'xtream','isLiveView':True,'channelName':'US: A&E East',
+                'epgTitle':'WRONG LIVE PROGRAM'}
+        with patch.object(server,'remote_status',return_value=remote):
+            url=self.url('/status?stream_id=120&playback=catchup&title_hint=US%3A%20A%26E%20East%20-%20Storage%20Wars')
+            info=json.load(urllib.request.urlopen(url))
+            self.assertTrue(info['matched'])
+            self.assertEqual(info['mode'],'catchup')
+            self.assertEqual(info['source'],'catchup-title')
+            self.assertEqual(info['epgTitle'],'Storage Wars')
+            self.assertTrue(info['hasLogo'])
+
+    def test_decorated_catchup_title_includes_verified_broadcast_window(self):
+        scheduled = ({'epgTitle': 'Storage Wars',
+                      'epgStart': '2026-11-03T05:00:00Z',
+                      'epgEnd': '2026-11-03T05:30:00Z'}, 'catchup-provider')
+        with patch.object(server, 'resolve_archive', return_value=scheduled):
+            out = json.load(urllib.request.urlopen(self.url(
+                '/status?stream_id=120&playback=catchup&'
+                'title_hint=US%3A%20A%26E%20East%20-%20Storage%20Wars&'
+                'archive_start=2026-11-03%3A05-00')))
+        self.assertTrue(out['matched'])
+        self.assertEqual(out['epgTitle'], 'Storage Wars')
+        self.assertEqual(out['source'], 'catchup-title-scheduled')
+        self.assertEqual(out['epgStart'], '2026-11-03T05:00:00Z')
+        self.assertEqual(out['epgEnd'], '2026-11-03T05:30:00Z')
+
+    def test_decorated_catchup_rejects_unrelated_schedule_times(self):
+        scheduled = ({'epgTitle': 'Completely Different Show',
+                      'epgStart': '2026-11-03T05:00:00Z',
+                      'epgEnd': '2026-11-03T05:30:00Z'}, 'catchup-provider')
+        with patch.object(server, 'resolve_archive', return_value=scheduled):
+            out = json.load(urllib.request.urlopen(self.url(
+                '/status?stream_id=120&playback=catchup&'
+                'title_hint=US%3A%20A%26E%20East%20-%20Storage%20Wars&'
+                'archive_start=2026-11-03%3A05-00')))
+        self.assertEqual(out['epgTitle'], 'Storage Wars')
+        self.assertEqual(out['epgStart'], '')
+        self.assertEqual(out['epgEnd'], '')
+
+    def test_catchup_survives_nonlive_remote(self):
+        with patch.object(server,'remote_status',return_value={'portal':'xtream','isLiveView':False}):
+            info=json.load(urllib.request.urlopen(self.url(
+                '/status?stream_id=120&playback=catchup&title_hint=US%3A%20A%26E%20East%20-%20Storage%20Wars')))
+            self.assertTrue(info['matched'])
+            self.assertEqual(info['epgTitle'],'Storage Wars')
+
+    def test_invalid_mode_rejected(self):
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(self.url('/status?stream_id=120&playback=movie'))
+        self.assertEqual(err.exception.code,400)
+
+    def test_logo_endpoint_skips_remote_and_archive_epg(self):
+        with patch.object(server, 'remote_status', side_effect=AssertionError('remote status called')):
+            with patch.object(server, 'download_image', return_value=(b'png-test', 'image/png')) as dl:
+                server._LOGO_CACHE.clear()
+                url = self.url('/logo?stream_id=120&playback=catchup&'
+                               'archive_start=2026-11-03%3A05-00&'
+                               'title_hint=US%3A%20A%26E%20East')
+                first = urllib.request.urlopen(url).read()
+                second = urllib.request.urlopen(url).read()
+                self.assertEqual(first, b'png-test')
+                self.assertEqual(first, second)
+                self.assertEqual(dl.call_count, 1)  # warm cache, no second download
+                server._LOGO_CACHE.clear()
+
+    def test_cached_logo_does_not_cache_failed_download(self):
+        server._LOGO_CACHE.clear()
+        with patch.object(server, 'download_image', side_effect=[
+                None, (b'pass', 'image/png')]) as dl:
+            self.assertIsNone(server.cached_image('https://test.invalid/logo.png'))
+            self.assertEqual(server.cached_image('https://test.invalid/logo.png')[0], b'pass')
+            self.assertEqual(dl.call_count, 2)
+        server._LOGO_CACHE.clear()
 
     def test_black_background_rgba_png(self):
         from logo import flatten_png_black
