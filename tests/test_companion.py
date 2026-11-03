@@ -2,6 +2,7 @@
 from __future__ import annotations
 import importlib.util
 import json
+from datetime import datetime, timedelta, timezone
 import sqlite3
 import sys
 import struct
@@ -61,7 +62,9 @@ class CompanionTests(unittest.TestCase):
 
     def test_status_does_not_return_logo_credentials(self):
         status = {'portal':'xtream','isLiveView':True,'channelName':'US: A&E East',
-                  'epgTitle':'Storage Wars','epgStart':'2026-11-02T15:30:00Z','epgEnd':'2026-11-02T16:00:00Z'}
+                  'epgTitle':'Storage Wars',
+                  'epgStart':(datetime.now(timezone.utc)-timedelta(minutes=5)).isoformat(),
+                  'epgEnd':(datetime.now(timezone.utc)+timedelta(minutes=25)).isoformat()}
         with patch.object(server,'remote_status',return_value=status):
             body = urllib.request.urlopen(self.url('/status?stream_id=120')).read().decode()
             value = json.loads(body)
@@ -72,6 +75,50 @@ class CompanionTests(unittest.TestCase):
             self.assertNotIn('username',body)
             bad = json.load(urllib.request.urlopen(self.url('/status?stream_id=122')))
             self.assertFalse(bad['matched'])
+
+    def test_expired_remote_epg_replaced_by_current_sqlite_without_ui_click(self):
+        # Simulates Remote API retaining the old EPG until IPTVnator is clicked.
+        now = datetime.now(timezone.utc)
+        stale = {'portal': 'xtream', 'isLiveView': True,
+                 'channelName': 'US: A&E East', 'epgTitle': 'Old Show',
+                 'epgStart': (now - timedelta(minutes=60)).isoformat(),
+                 'epgEnd': (now - timedelta(minutes=30)).isoformat()}
+        with patch.object(server, 'remote_status', return_value=stale):
+            out = json.load(urllib.request.urlopen(
+                self.url('/status?stream_id=120&playback=live&title_hint=US%3A%20A%26E%20East')))
+        self.assertTrue(out['matched'])
+        self.assertEqual(out['source'], 'sqlite')
+        self.assertEqual(out['epgTitle'], 'Local Show')
+
+    def test_expired_remote_uses_fresh_xtream_schedule_when_sqlite_absent(self):
+        now = datetime.now(timezone.utc)
+        stale = {'portal': 'xtream', 'isLiveView': True,
+                 'channelName': 'US: A&E East', 'epgTitle': 'Old Show',
+                 'epgStart': (now - timedelta(minutes=90)).isoformat(),
+                 'epgEnd': (now - timedelta(minutes=60)).isoformat()}
+        show = {'epgTitle': 'New Show',
+                'epgStart': (now - timedelta(minutes=3)).isoformat(),
+                'epgEnd': (now + timedelta(minutes=22)).isoformat()}
+        empty = {'epgTitle': '', 'epgStart': '', 'epgEnd': ''}
+        with patch.object(server, 'remote_status', return_value=stale), \
+             patch.object(server, 'epg_from_sqlite', return_value=empty), \
+             patch.object(server, 'resolve_live', return_value=(show, 'live-provider')) as resolver:
+            out = json.load(urllib.request.urlopen(
+                self.url('/status?stream_id=120&playback=live&title_hint=US%3A%20A%26E%20East')))
+        self.assertEqual(out['source'], 'live-provider')
+        self.assertEqual(out['epgTitle'], 'New Show')
+        resolver.assert_called_once()
+
+    def test_current_epg_interval_requires_valid_times(self):
+        now = datetime.now(timezone.utc)
+        programme = {'epgTitle': 'New Show',
+                     'epgStart': (now - timedelta(minutes=5)).isoformat(),
+                     'epgEnd': (now + timedelta(minutes=5)).isoformat()}
+        self.assertTrue(server.current_epg(programme, now))
+        self.assertFalse(server.current_epg({**programme,
+            'epgEnd': (now - timedelta(seconds=1)).isoformat()}, now))
+        self.assertFalse(server.current_epg({**programme, 'epgEnd': ''}, now))
+        self.assertFalse(server.current_epg({**programme, 'epgTitle': ''}, now))
 
     def test_status_disabled_on_vod(self):
         with patch.object(server,'remote_status',return_value={'portal':'xtream','isLiveView':False,'channelName':'US: A&E East'}):
