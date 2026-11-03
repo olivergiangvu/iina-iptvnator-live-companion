@@ -1,48 +1,14 @@
-## v0.1.2-rc.6 — Unreleased Catch-up broadcast clock fix
-
-- Restore actual broadcast start/end clock in Catch-up titles from Xtream `start`/`stop` or `start`/`end` when Unix timestamps are not provided.
-- Convert source wall-clock times using the persisted Xtream panel timezone to UTC, then format in IINA's local time.
-- Avoid inventing clock values when the panel timezone or end time is missing, and reject mismatched decorated launch titles.
-- Preserve RC5 automatic Live EPG rollover, RC4 logo performance, RC3 archived programme lookup and the unchanged VLC wrapper.
-- Add Python fixture coverage for UTC, Asia/Ho_Chi_Minh, missing end, and decorated title, plus JavaScript title-format verification.
-
-## v0.1.2-rc.5 — Unreleased autonomous Live EPG
-
-- Verify the IPTVnator Remote API programme time range against the real UTC clock; never trust completed programmes.
-- On stale/missing Remote EPG, use current read-only XMLTV programme or the matching configured Xtream provider's schedule.
-- Cache entire provider schedule (up to five minutes), selecting the current programme on every poll; recheck sooner when the cached schedule has ended.
-- Preserve RC4 low-latency Live logo behaviour and RC3 archived Catch-up metadata, plus VOD/Trakt isolation and byte-identical wrapper.
-- Add tests for stale Remote UI, exact programme boundary transitions and safe timezone handling.
-
-## v0.1.2-rc.4 — Unreleased Live latency candidate
-
-- Queue a new-channel request if a previous poll is in flight, preventing a missed file-loaded event and further 10-second wait.
-- Retry transient logo failures after 8 seconds, rather than a 60-second lockout.
-- Cache successful normalized logos in companion memory for 12 hours with a 16-MB cap; never cache failures.
-- Skip unrelated Remote API/EPG calls for valid identity `/logo` requests.
-- Preserve RC3 Catch-up, Live EPG, VOD isolation and byte-identical VLC wrapper.
-- Add latency, cache and logo fast-path regression tests; Mac validation required.
-
-## v0.1.2-rc.3 — Unreleased Catch-up title fix
-
-- Recover selected Catch-up programme from exact server-clock timestamp in Xtream `timeshift` URL when IPTVnator provides channel-only title.
-- Match imported XMLTV programme first; if missing, query configured provider's `get_simple_data_table` endpoint read-only with in-memory credentials only.
-- Source identity must be unambiguous. Validate wall-clock, cap response size and timeout, forbid redirects/proxies and cache 90 seconds.
-- Preserve Live title and logo, attached-artwork handling, VOD exclusion, and byte-identical VLC wrapper.
-- Never attach unredacted IINA log files: other plugins may expose OAuth tokens, stream usernames and passwords.
-
-## 0.1.2-rc.2 — Unreleased Catch-up and Live regression fix
-
-- Restore Live TV and Catch-up metadata sync by removing reliance on browser `URL` / `URLSearchParams` globals inside IINA's JS runtime.
-- Add runtime regression tests without `URL` injected into IINA sandbox; confirm VOD isolation and legacy/REST Catch-up.
-
-- Recognize REST `/timeshift/.../streamId.ts` and legacy `/streaming/timeshift.php?stream=...` URLs.
-- Accept `Channel - Selected Programme` Catch-up titles sent by IPTVnator.
-- Keep Catch-up metadata fixed to the selected archived programme; do not copy current Live EPG Now.
-- Restore channel logos for Catch-up while preserving existing Live and VOD behavior.
-- Add Catch-up JavaScript/Python regression tests; no changes to VLC → IINA wrapper v1.1.
-
 # Changelog
+
+## v0.1.2 — Stable (2026-11-03)
+
+- First stable release tested on IINA 1.5.0 with IPTVnator Xtream Live and Catch-up.
+- Live titles auto-update across programme boundaries without clicking IPTVnator: validate current Remote EPG; fall back to read-only XMLTV and cached provider schedule.
+- Catch-up REST/legacy timeshift support with historical programme identity and real scheduled start/end, converted to local time when source timezone is reliable.
+- Native IINA/mpv channel artwork in Now Playing; optimized cache, retry and fast path for repeated channel launches.
+- Protect Live/VOD isolation, EP+/Trakt, PiP and byte-identical VLC → IINA wrapper v1.1.
+- Security: localhost-only, read-only SQLite, provider credentials kept server-side, bounded remote EPG/image downloads.
+- Automated Python and JavaScript tests, GitHub Actions and release artifact verification.
 
 ## v0.1.1 — First public beta (2026-11-03)
 
