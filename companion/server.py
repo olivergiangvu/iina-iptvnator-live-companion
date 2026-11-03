@@ -54,7 +54,7 @@ def _hint_matches(title: str, hint: str) -> bool:
     """Allow channel-only title, or a decorated EPG title from the VLC adapter."""
     title, hint = title.strip().casefold(), hint.strip().casefold()
     return bool(title and hint and (hint == title or
-           any(hint.startswith(title + sep) for sep in (" · ", " | ", " — "))))
+           any(hint.startswith(title + sep) for sep in (" · ", " | ", " — ", " - "))))
 
 
 def lookup_channel(db_path: Path, stream: int, name: str = "", title_hint: str = "") -> dict | None:
@@ -183,6 +183,20 @@ def download_image(url: str) -> tuple[bytes, str] | None:
     except (urllib.error.URLError, OSError, ValueError, TimeoutError):
         return None
 
+def catchup_program_title(channel_title: str, launch_title: str) -> str:
+    """Selected Catch-up programme is fixed; never substitute the current Live EPG."""
+    channel_title = (channel_title or "").strip()
+    launch_title = (launch_title or "").strip()
+    if not channel_title or not _hint_matches(channel_title, launch_title):
+        return ""
+    if launch_title.casefold() == channel_title.casefold():
+        return ""
+    for sep in (" - ", " · ", " | ", " — "):
+        if (launch_title[:len(channel_title)].casefold() == channel_title.casefold()
+                and launch_title[len(channel_title):].startswith(sep)):
+            return launch_title[len(channel_title) + len(sep):].strip()
+    return ""
+
 
 class CompanionHandler(BaseHTTPRequestHandler):
     server_version = "IPTVnatorLiveCompanion/0.1.1"
@@ -202,21 +216,28 @@ class CompanionHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def state(self, stream: int, hint: str) -> tuple[dict, dict | None]:
+    def state(self, stream: int, hint: str, playback: str = "live") -> tuple[dict, dict | None]:
         remote = remote_status() or {}
         remote_name = str(remote.get("channelName") or "") if (
             remote.get("isLiveView") and remote.get("portal") == "xtream") else ""
         channel = lookup_channel(self.server.database_path, stream, remote_name, hint)
         if not channel:
             return {"isLiveView": True, "source": "unmatched"}, None
-        remote_is_same = bool(remote_name and remote_name.casefold() == channel["title"].casefold())
-        if remote_is_same:
-            epg = {k: remote.get(k, "") for k in ("epgTitle", "epgStart", "epgEnd")}
-            epg_source = "remote"
+        if playback == "catchup":
+            # The archived title is supplied by IPTVnator when opening the stream.
+            # Do not overwrite with live Remote API "EPG Now" or current-time SQLite.
+            selected_program = catchup_program_title(channel["title"], hint)
+            epg = {"epgTitle": selected_program, "epgStart": "", "epgEnd": ""}
+            epg_source = "catchup-title" if selected_program else "catchup-channel"
         else:
-            epg = epg_from_sqlite(self.server.database_path, channel)
-            epg_source = "sqlite" if epg["epgTitle"] else "none"
-        return {"isLiveView": True, "source": epg_source,
+            remote_is_same = bool(remote_name and remote_name.casefold() == channel["title"].casefold())
+            if remote_is_same:
+                epg = {k: remote.get(k, "") for k in ("epgTitle", "epgStart", "epgEnd")}
+                epg_source = "remote"
+            else:
+                epg = epg_from_sqlite(self.server.database_path, channel)
+                epg_source = "sqlite" if epg["epgTitle"] else "none"
+        return {"isLiveView": True, "mode": playback, "source": epg_source,
                 "channelName": channel["title"], **epg}, channel
 
     def do_GET(self):
@@ -229,15 +250,19 @@ class CompanionHandler(BaseHTTPRequestHandler):
         params = urllib.parse.parse_qs(u.query)
         stream = stream_id(params.get("stream_id", [""])[0])
         hint = params.get("title_hint", [""])[0].strip()[:250]
+        playback = params.get("playback", ["live"])[0]
+        if playback not in ("live", "catchup"):
+            return self.json_response(400, {"error": "invalid playback mode"})
         if stream is None:
             return self.json_response(400, {"error": "invalid stream_id"})
-        status, channel = self.state(stream, hint)
+        status, channel = self.state(stream, hint, playback)
         matched = bool(channel)
         if u.path == "/status":
             return self.json_response(200, {
                 "matched": matched,
                 "isLiveView": bool(status.get("isLiveView")),
                 "source": status.get("source", "unmatched"),
+                "mode": playback,
                 "channelName": status.get("channelName", "") if matched else "",
                 "epgTitle": status.get("epgTitle", "") if matched else "",
                 "epgStart": status.get("epgStart", "") if matched else "",
