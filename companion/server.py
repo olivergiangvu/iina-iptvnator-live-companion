@@ -22,6 +22,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 
 from logo import flatten_png_black
+from catchup import resolve_archive
 
 DEFAULT_DB = Path.home() / ".iptvnator/databases/iptvnator.db"
 IPTVNATOR_REMOTE = "http://127.0.0.1:8765/api/remote-control/status"
@@ -157,7 +158,7 @@ def download_image(url: str) -> tuple[bytes, str] | None:
         return None
     try:
         opener = urllib.request.build_opener(SafeImageRedirect())
-        request = urllib.request.Request(url, headers={"User-Agent": "IPTVnatorLiveCompanion/0.1.2-rc.2"})
+        request = urllib.request.Request(url, headers={"User-Agent": "IPTVnatorLiveCompanion/0.1.2-rc.3"})
         with opener.open(request, timeout=8) as res:
             raw_content_type = res.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
             if raw_content_type not in ("image/jpeg", "image/png", "image/webp"):
@@ -199,7 +200,7 @@ def catchup_program_title(channel_title: str, launch_title: str) -> str:
 
 
 class CompanionHandler(BaseHTTPRequestHandler):
-    server_version = "IPTVnatorLiveCompanion/0.1.2-rc.2"
+    server_version = "IPTVnatorLiveCompanion/0.1.2-rc.3"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -216,7 +217,8 @@ class CompanionHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def state(self, stream: int, hint: str, playback: str = "live") -> tuple[dict, dict | None]:
+    def state(self, stream: int, hint: str, playback: str = "live",
+              archive_start: str = "") -> tuple[dict, dict | None]:
         remote = remote_status() or {}
         remote_name = str(remote.get("channelName") or "") if (
             remote.get("isLiveView") and remote.get("portal") == "xtream") else ""
@@ -229,6 +231,11 @@ class CompanionHandler(BaseHTTPRequestHandler):
             selected_program = catchup_program_title(channel["title"], hint)
             epg = {"epgTitle": selected_program, "epgStart": "", "epgEnd": ""}
             epg_source = "catchup-title" if selected_program else "catchup-channel"
+            if not selected_program and archive_start:
+                resolved = resolve_archive(self.server.database_path, stream,
+                                           channel["title"], archive_start)
+                if resolved:
+                    epg, epg_source = resolved
         else:
             remote_is_same = bool(remote_name and remote_name.casefold() == channel["title"].casefold())
             if remote_is_same:
@@ -244,7 +251,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
         u = urllib.parse.urlsplit(self.path)
         if u.path == "/health":
             return self.json_response(200, {"ok": True, "dbExists": self.server.database_path.is_file(),
-                                            "version": "0.1.2-rc.2"})
+                                            "version": "0.1.2-rc.3"})
         if u.path not in ("/status", "/logo"):
             return self.json_response(404, {"error": "not found"})
         params = urllib.parse.parse_qs(u.query)
@@ -255,7 +262,8 @@ class CompanionHandler(BaseHTTPRequestHandler):
             return self.json_response(400, {"error": "invalid playback mode"})
         if stream is None:
             return self.json_response(400, {"error": "invalid stream_id"})
-        status, channel = self.state(stream, hint, playback)
+        archive_start = params.get("archive_start", [""])[0].strip()[:24]
+        status, channel = self.state(stream, hint, playback, archive_start)
         matched = bool(channel)
         if u.path == "/status":
             return self.json_response(200, {
