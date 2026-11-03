@@ -20,8 +20,8 @@ python3 -m py_compile "$EXPECTED_SCRIPT" "$ROOT/companion/logo.py" "$ROOT/compan
 launchctl kickstart -k "gui/$(id -u)/$LABEL"
 for ((i=0;i<20;i++)); do
   if curl --connect-timeout 1 --max-time 2 -fsS 'http://127.0.0.1:8766/health' \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin);sys.exit(0 if d.get("ok") and d.get("dbExists") and d.get("version")=="0.1.2-rc.6" else 1)' 2>/dev/null; then
-    echo "Companion v0.1.2-rc.6 ACTIVE on 127.0.0.1:8766 (wrapper unchanged)."
+    | python3 -c 'import json,sys; d=json.load(sys.stdin);sys.exit(0 if d.get("ok") and d.get("dbExists") and d.get("version")=="0.1.2" else 1)' 2>/dev/null; then
+    echo "Companion v0.1.2 ACTIVE on 127.0.0.1:8766 (wrapper unchanged)."
     exit 0
   fi
   sleep 0.5
