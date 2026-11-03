@@ -1,85 +1,44 @@
-# IPTVnator → IINA Launcher v1.1
+# Playback launcher v1.1
 
-**First-class companion component of this repository.**
+[Home](../README.md) · [Installation](INSTALLATION.md) · [Operations](OPERATIONS.md)
 
-This file is the actual standalone macOS shell launcher used at
-`~/.local/bin/iptvnator-iina-vlc`. It is **not** a macOS `.app` bundle and is
-**not** embedded inside the `.iinaplgz` plugin archive.
+`companion/iptvnator-iina-vlc` is the **standalone playback adapter** installed at `~/.local/bin/iptvnator-iina-vlc`. IPTVnator calls it through its VLC-style External Player setting; the script launches **native IINA** with equivalent mpv arguments. It is neither a macOS `.app` nor part of the IINA plugin ZIP.
 
-## The three pieces
+## Behaviour and boundaries
 
-| Piece | Source file | Installs to / purpose |
-| --- | --- | --- |
-| **Playback launcher v1.1** | [`companion/iptvnator-iina-vlc`](../companion/iptvnator-iina-vlc) | `~/.local/bin/iptvnator-iina-vlc`; converts IPTVnator's VLC external-player arguments to native IINA/mpv arguments |
-| **Metadata companion v0.1.2** | [`companion/server.py`](../companion/server.py), [`companion/catchup.py`](../companion/catchup.py) | Read-only Python LaunchAgent on `127.0.0.1:8766`; EPG and logos |
-| **IINA Live Companion plugin v0.1.2** | [`Info.json`](../Info.json), [`main.js`](../main.js) | `.iinaplgz` in IINA Settings → Plugins; native Now Playing title and artwork |
+- Accepts the stream URL and forwards supported User-Agent, Referer, HTTP headers, stream title and start position to IINA/mpv.
+- Ignores unsupported VLC remote-control flags.
+- Invokes `/Applications/IINA.app/Contents/MacOS/IINA`; IINA manages playback and PiP.
+- Does **not** fetch EPG, call Xtream provider APIs, transcode video or manage VOD/Trakt/EP+.
+- Logs only the presence/count of options to `~/Library/Logs/iptvnator-iina-vlc.log`, never their values or the stream URL.
 
-The launcher is **part of the repository's source** and remains exactly the
-byte-verified **v1.1**. It is intentionally versioned separately from the
-IINA plugin and Python metadata service.
+## Install or verify
 
-## Installation / inspection
-
-For an existing user, check without modifying anything:
+For a **Git checkout**, use the non-overwriting installer:
 
 ```bash
 cd "$HOME/Developer/iina-iptvnator-live-companion"
+
+# Existing installation: read-only verification
 bash scripts/install-launcher.sh --check
-cmp "$HOME/.local/bin/iptvnator-iina-vlc" companion/iptvnator-iina-vlc &&
-  echo 'LAUNCHER IDENTICAL'
-```
 
-On a **new Mac** where the destination does not exist:
-
-```bash
-cd "$HOME/Developer/iina-iptvnator-live-companion"
+# New Mac only: installs if absent; verifies if identical;
+# refuses existing different files and symlinks
 bash scripts/install-launcher.sh --install
 ```
 
-The script verifies the tracked launcher SHA-256 and writes only the missing
-`~/.local/bin/iptvnator-iina-vlc` file, with executable permissions. It **refuses
-to overwrite any existing different launcher** (including a symlink) and
-does not modify IPTVnator's SQLite database, the companion LaunchAgent, IINA,
-PiP, or any player preferences.
-
-Configure IPTVnator's **External Player: VLC** option to call the absolute
-launcher path. IPTVnator can continue using its existing VLC-style external
-player arguments while the launcher invokes IINA directly.
-
-## Playback behavior
-
-- Preserves the original URL, User-Agent, Referer, and HTTP header values when
-  forwarding VLC-style external player inputs to native IINA/mpv.
-- Sends channel title using `--mpv-force-media-title` so the Live plugin can
-  identify the channel; also accepts the optional start position.
-- Silently ignores known VLC remote control flags unsupported by IINA.
-- Calls the native IINA binary at
-  `/Applications/IINA.app/Contents/MacOS/IINA`.
-- **Does not** auto-enter PiP, transcode, replace the codec, fetch EPG,
-  query provider APIs, or manage VOD/Trakt/EP+.
-
-The log at `~/Library/Logs/iptvnator-iina-vlc.log` records **only option flags
-and counts**; never share full `ps` command lines or IINA logs as these may
-contain credential-bearing stream URLs or unrelated OAuth tokens.
-
-## Source integrity
-
-The committed launcher v1.1 SHA-256:
+The original v1.1 source has SHA-256:
 
 ```text
 12d9be1a61f3aa8545de853df479c4c8d18979e2909b244f7248e1237550f623
 ```
 
-The repository's GitHub Actions workflow checks this hash and exercises the
-installer's non-overwriting behavior. **Future launcher changes require their
-own version and explicit user consent**; metadata plugin upgrades must never
-silently replace the playback launcher.
+For a Release-asset installation, verify the downloaded file before installing it; see [Installation](INSTALLATION.md). Set IPTVnator's External Player executable to the **absolute path** of the launcher. Do not change a working external-player configuration during a metadata-only update.
 
-## Why this is not part of the IINA plugin ZIP
+## Versioning
 
-IINA's `.iinaplgz` plugin format installs the JavaScript plugin, not a shell
-executable under `~/.local/bin` or a macOS LaunchAgent. This repository
-therefore ships **all three components together as source** and documents
-their separate installation stages. The stable `v0.1.2` source tag already
-contains the original launcher source; the helper installer added later on
-`main` does not alter the released tag or executable.
+**Launcher v1.1 is independently versioned** from IINA Plugin/Python Companion v0.1.2. The source file has remained byte-identical through the latter's Live/Catch-up changes. Every CI run checks the v1.1 SHA-256 and that the installer does not overwrite an existing custom executable.
+
+The immutable `v0.1.2` Git tag contains the launcher source, but the helper `scripts/install-launcher.sh` was added to `main` **after** that tag. Do not check out the old tag expecting every later distribution helper to exist.
+
+Security: the launcher necessarily passes the stream URL in IINA's process invocation. Other diagnostic tools may expose this URL; **never publish an unredacted `ps` output or IINA log**. The launcher's own log intentionally avoids secret values.

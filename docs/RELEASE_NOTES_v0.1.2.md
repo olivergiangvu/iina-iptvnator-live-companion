@@ -1,32 +1,36 @@
-# IPTVnator Live Companion v0.1.2 — Stable
+# v0.1.2 — First Stable Release (2026-11-03)
 
-**First stable release** for IINA 1.5.0 and IPTVnator Xtream on macOS.
+macOS · IINA 1.5.0 · IPTVnator Xtream
 
-## What's new
+## Highlights
 
-- **Live TV:** current EPG name and broadcast hours in IINA and macOS Now Playing. An expired IPTVnator Remote EPG entry is automatically replaced using read-only XMLTV or the configured provider's cached programme schedule, even without clicking IPTVnator.
-- **Catch-up:** detects REST and legacy Xtream timeshift streams, keeps the selected archived programme, and displays its actual broadcast start/end when the provider supplies reliable clock and timezone data.
-- **Artwork:** channel logo in Now Playing; opaque-black transparent PNG normalization, bounded in-memory logo cache, shorter retry and better handling of rapid channel changes.
-- **Safety:** playback, PiP, VOD/Trakt/EP+ and the existing VLC → IINA launcher v1.1 remain unchanged. Companion only binds localhost and reads IPTVnator SQLite without writes.
+- **Live TV:** show title and original broadcast window; automatic EPG changes without clicking IPTVnator, with current-clock validation and local/provider schedule fallbacks.
+- **Catch-up:** historical programme identity and original broadcast window for REST/legacy timeshift streams, when reliable guide times are available.
+- **Artwork:** channel logo in native macOS Now Playing, improved cache and retry handling.
+- **Compatibility:** no changes to the original VLC → IINA launcher v1.1, video playback, manual PiP or VOD/EP+/Trakt workflows.
 
-## Install / upgrade
+## Official Release downloads
 
-1. Download **IPTVnator-Live-Companion-0.1.2.iinaplgz** from the release assets.
-2. Install or upgrade the Python companion from this repository using the steps in the [README](https://github.com/olivergiangvu/iina-iptvnator-live-companion).
-3. In IINA → Settings → Plugins, install the release package. Only one Live Companion version should be enabled. Fully restart IINA.
-4. Verify Live EPG rolls over without interacting with IPTVnator; test one archived Catch-up title and its scheduled hours.
+The [v0.1.2 GitHub Release](https://github.com/olivergiangvu/iina-iptvnator-live-companion/releases/tag/v0.1.2) distributes three **separate** assets:
 
-The original wrapper is not overwritten. Existing beta users can switch their repository checkout to main and run the included companion upgrade script, then install the stable plugin file.
+| Asset | Install target |
+| --- | --- |
+| `IPTVnator-Live-Companion-0.1.2.iinaplgz` | IINA → Settings → Plugins |
+| `iptvnator-iina-vlc` (v1.1) | `~/.local/bin/iptvnator-iina-vlc` |
+| `IPTVnator-Metadata-Companion-0.1.2.tar.gz` | Permanent source directory + macOS user LaunchAgent |
 
-## Tested
+The two additional standalone distribution assets were attached **after the initial release tag**; that immutable source tag predates some helper scripts found in today's `main`. Prefer [Installation](INSTALLATION.md) for the complete current setup rather than copying steps from the original tag.
 
-GitHub Actions runs Python and JavaScript regressions (Live title rollover, Catch-up broadcast hours, logo retries, VOD isolation), packages the plugin and verifies the original VLC wrapper SHA256. Live EPG auto-refresh, Catch-up programme/title/broadcast time and Now Playing artwork were also confirmed on IINA 1.5.0/macOS.
+**Existing deployments:** keep the launcher unchanged; update Companion source and restart its LaunchAgent. Update the IINA plugin separately when its version changes. See [Operations](OPERATIONS.md).
 
-## Known limitations
+## Verification
 
-- Control Center refresh timing follows IINA's native Now Playing implementation. The optional experimental track-refresh feature remains OFF by default for PiP safety.
-- HTTP 400/403/404 provider logo links may still be unavailable; no automatic cross-channel logo fallback.
-- If the provider's historical EPG or timezone is absent/ambiguous, scheduled times remain blank rather than being invented.
-- Single-Mac localhost deployment. Do not expose port 8766 to a LAN or upload raw credential-bearing IINA logs.
+Python/JavaScript regressions and GitHub Actions passed. Live EPG rollover without IPTVnator UI interaction, Catch-up title/broadcast hours and channel artwork were also tested on IINA 1.5.0/macOS.
 
-Source license: MIT. Read [SECURITY.md](https://github.com/olivergiangvu/iina-iptvnator-live-companion/blob/main/SECURITY.md) before exposing any external integration.
+## Known limits
+
+- Provider EPG history, timezone and image URLs may be incomplete or unavailable.
+- IINA decides native Control Center refresh timing. Optional experimental track-list refresh remains off by default for PiP safety.
+- Intended for a single Mac and loopback API, not a public server.
+
+[Changelog](../CHANGELOG.md) · [Security](../SECURITY.md)
