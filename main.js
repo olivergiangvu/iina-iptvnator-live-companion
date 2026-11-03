@@ -23,23 +23,34 @@ let nativeRefreshBusy = false;
 function debug(message) { log.log("[IPTVnator Live] " + message); }
 function getUrl() { try { return String(core.status.url || ""); } catch (_) { return ""; } }
 function getMpvString(key) { try { return String(mpv.getString(key) || ""); } catch (_) { return ""; } }
-/** Resolve Live vs Xtream Catch-up without forwarding credential-bearing URL. */
+/** Parse Xtream Live and Catch-up without browser-only URL or URLSearchParams.
+ * IINA's plugin JavaScript runtime must not be assumed to implement Web APIs.
+ * We never log/forward the full stream URL (it may include credentials).
+ */
 function playbackIdentityFromUrl(url) {
-  if (!/^https?:\/\//i.test(url)) return null;
-  let parsed;
-  try { parsed = new URL(url); } catch (_) { return null; }
-  const path = parsed.pathname;
+  if (!/^https?:\/\/[^/?#]+/i.test(url)) return null;
+  // Remove only the authority, then split path from query. All credentials stay
+  // inside this function. No URL(), URLSearchParams(), or other browser APIs.
+  const pathAndQuery = url.replace(/^https?:\/\/[^/?#]+/i, "").split("#")[0];
+  const queryAt = pathAndQuery.indexOf("?");
+  const path = queryAt < 0 ? pathAndQuery : pathAndQuery.slice(0, queryAt);
+  const query = queryAt < 0 ? "" : pathAndQuery.slice(queryAt + 1);
   if (/\/(movie|series)\//i.test(path)) return null;
-  // Legacy: /streaming/timeshift.php?...&stream=123&...
+
+  // Legacy Xtream archive: /streaming/timeshift.php?...&stream=123&...
   if (/\/streaming\/timeshift\.php\/?$/i.test(path)) {
-    const id = parsed.searchParams.get("stream") || "";
-    return /^\d{1,15}$/.test(id) && Number(id) > 0
-      ? { streamId: id, mode: "catchup" } : null;
+    const match = query.match(/(?:^|&)stream=(\d{1,15})(?:&|$)/i);
+    return match && Number(match[1]) > 0
+      ? { streamId: match[1], mode: "catchup" } : null;
   }
-  // REST: /timeshift/user/password/duration/start/123.ts (or .m3u8)
-  const rest = path.match(/\/timeshift\/[^/]+\/[^/]+\/\d+\/[^/]+\/(\d{1,15})\.(?:ts|m3u8)$/i);
-  if (rest && Number(rest[1]) > 0) return { streamId: rest[1], mode: "catchup" };
+  // REST Xtream archive: /timeshift/user/pass/minutes/start/id.ts (or m3u8)
+  const archive = path.match(/\/timeshift\/[^/]+\/[^/]+\/\d+\/[^/]+\/(\d{1,15})\.(?:ts|m3u8)$/i);
+  if (archive && Number(archive[1]) > 0) {
+    return { streamId: archive[1], mode: "catchup" };
+  }
   if (/\/timeshift\//i.test(path)) return null;
+
+  // Preserve the v0.1.1 Live path rules including legacy URLs without /live/.
   if (/\.mp4\/?$/i.test(path) && !/\/live\//i.test(path)) return null;
   const live = path.match(/\/(\d{1,15})(?:\.(?:ts|m3u8|m3u|mp4))?\/?$/i);
   return live && Number(live[1]) > 0
@@ -183,7 +194,13 @@ async function poll() {
   if (!enabled || polling) return;
   const url = getUrl();
   const identity = playbackIdentityFromUrl(url);
-  if (!url || !identity) return;
+  if (!url || !identity) {
+    if (url && lastSyncDiagnostic !== "unsupported-url") {
+      lastSyncDiagnostic = "unsupported-url";
+      debug("Stream URL not recognized as Xtream Live/Catch-up; no metadata applied.");
+    }
+    return;
+  }
   if (url !== currentUrl) {
     invalidate();
     currentUrl = url;
