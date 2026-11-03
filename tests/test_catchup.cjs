@@ -19,7 +19,7 @@ async function check(url,shouldPoll=true) {
     file:{exists:()=>true},utils:{resolvePath:()=>'/tmp/logo.png'},
     menu:{item:(n,f,o)=>({action:f,selected:o.selected}),addItem:()=>{},forceUpdate:()=>{}},
     console:{log:()=>{}}
-  },URL,Date,Promise,setInterval:()=>1,setTimeout:(f,n)=>setTimeout(f,Math.min(n,20)),clearTimeout};
+  },Date,Promise,setInterval:()=>1,setTimeout:(f,n)=>setTimeout(f,Math.min(n,20)),clearTimeout};
   vm.runInNewContext(source,c);
   ev['mpv.file-loaded']();await wait(85);
   if(!shouldPoll){assert.equal(requests.length,0);return;}
@@ -38,6 +38,9 @@ async function check(url,shouldPoll=true) {
   await check('http://example.invalid/timeshift/USERNAME/PASSWORD/30/2026-11-02:22-30/120.ts');
   await check('http://example.invalid/streaming/timeshift.php?username=USERNAME&password=PASSWORD&stream=120&start=2026-11-02&duration=30');
   await check('http://example.invalid/movie/USERNAME/PASSWORD/120.mp4',false);
+  await check('http://example.invalid/series/USERNAME/PASSWORD/120.mp4',false);
+  await check('http://example.invalid/timeshift/USERNAME/PASSWORD/30/start/120.ts?token=xx');
+  await check('http://example.invalid/streaming/timeshift.php?username=USERNAME&stream=120&password=PASSWORD');
   await check('http://example.invalid/streaming/timeshift.php?stream=bad',false);
   console.log('PASS: Catch-up REST + legacy, archive title, logo, VOD isolation');
 })().catch(e=>{console.error(e);process.exitCode=1});
