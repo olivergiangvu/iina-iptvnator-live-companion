@@ -24,15 +24,16 @@ jobs:
           node tests/test_plugin.cjs
           node tests/test_catchup.cjs
           node tests/test_archive_plugin.cjs
+          node tests/test_latency.cjs
       - name: Package and verify IINA plugin
         run: |
           python3 scripts/package-plugin.py
           python3 - <<'PY'
           import json, pathlib, zipfile
-          p=next(pathlib.Path('dist').glob('*0.1.2-rc.3.iinaplgz'))
+          p=next(pathlib.Path('dist').glob('*0.1.2-rc.4.iinaplgz'))
           with zipfile.ZipFile(p) as z:
               assert set(z.namelist()) == {'Info.json','main.js'}
-              assert json.loads(z.read('Info.json'))['version']=='0.1.2-rc.3'
+              assert json.loads(z.read('Info.json'))['version']=='0.1.2-rc.4'
           print('Plugin archive verified')
           PY
       - name: Protect unchanged VLC wrapper
