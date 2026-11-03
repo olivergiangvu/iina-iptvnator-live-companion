@@ -1,3 +1,12 @@
+## v0.1.2-rc.4 — Unreleased Live latency candidate
+
+- Queue a new-channel request if a previous poll is in flight, preventing a missed file-loaded event and further 10-second wait.
+- Retry transient logo failures after 8 seconds, rather than a 60-second lockout.
+- Cache successful normalized logos in companion memory for 12 hours with a 16-MB cap; never cache failures.
+- Skip unrelated Remote API/EPG calls for valid identity `/logo` requests.
+- Preserve RC3 Catch-up, Live EPG, VOD isolation and byte-identical VLC wrapper.
+- Add latency, cache and logo fast-path regression tests; Mac validation required.
+
 ## v0.1.2-rc.3 — Unreleased Catch-up title fix
 
 - Recover selected Catch-up programme from exact server-clock timestamp in Xtream `timeshift` URL when IPTVnator provides channel-only title.
