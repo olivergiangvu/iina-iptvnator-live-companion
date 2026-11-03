@@ -36,6 +36,8 @@ jobs:
               assert json.loads(z.read('Info.json'))['version']=='0.1.2'
           print('Plugin archive verified')
           PY
+      - name: Paired launcher installer regression
+        run: bash tests/test_launcher.sh
       - name: Protect unchanged VLC wrapper
         run: |
           echo '12d9be1a61f3aa8545de853df479c4c8d18979e2909b244f7248e1237550f623  companion/iptvnator-iina-vlc' | sha256sum -c
