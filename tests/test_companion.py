@@ -122,6 +122,29 @@ class CompanionTests(unittest.TestCase):
             urllib.request.urlopen(self.url('/status?stream_id=120&playback=movie'))
         self.assertEqual(err.exception.code,400)
 
+    def test_logo_endpoint_skips_remote_and_archive_epg(self):
+        with patch.object(server, 'remote_status', side_effect=AssertionError('remote status called')):
+            with patch.object(server, 'download_image', return_value=(b'png-test', 'image/png')) as dl:
+                server._LOGO_CACHE.clear()
+                url = self.url('/logo?stream_id=120&playback=catchup&'
+                               'archive_start=2026-11-03%3A05-00&'
+                               'title_hint=US%3A%20A%26E%20East')
+                first = urllib.request.urlopen(url).read()
+                second = urllib.request.urlopen(url).read()
+                self.assertEqual(first, b'png-test')
+                self.assertEqual(first, second)
+                self.assertEqual(dl.call_count, 1)  # warm cache, no second download
+                server._LOGO_CACHE.clear()
+
+    def test_cached_logo_does_not_cache_failed_download(self):
+        server._LOGO_CACHE.clear()
+        with patch.object(server, 'download_image', side_effect=[
+                None, (b'pass', 'image/png')]) as dl:
+            self.assertIsNone(server.cached_image('https://test.invalid/logo.png'))
+            self.assertEqual(server.cached_image('https://test.invalid/logo.png')[0], b'pass')
+            self.assertEqual(dl.call_count, 2)
+        server._LOGO_CACHE.clear()
+
     def test_black_background_rgba_png(self):
         from logo import flatten_png_black
         def chunk(kind, data):
