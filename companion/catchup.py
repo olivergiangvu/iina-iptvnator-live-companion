@@ -194,6 +194,12 @@ def _decode_title(raw: object) -> str:
 
 def _provider_epg(rows: list[dict], start: dt.datetime,
                   zone: dt.tzinfo | None) -> dict | None:
+    """Read actual broadcast window, not the elapsed time of the video stream.
+
+    Some Xtream panels return start/stop wall clocks but omit Unix timestamps.
+    Convert those clocks only if the persisted panel timezone is known. This
+    also avoids wrongly labeling a server-local clock as UTC.
+    """
     matches = []
     wanted = start.strftime("%Y-%m-%d %H:%M")
     for row in rows:
@@ -212,19 +218,18 @@ def _provider_epg(rows: list[dict], start: dt.datetime,
         if not title:
             continue
 
-        def from_unix(key):
-            try:
-                value = int(row.get(key, 0))
-                if 946684800 <= value <= 4102444800:
-                    return _iso(dt.datetime.fromtimestamp(
-                        value, dt.timezone.utc))
-            except (TypeError, ValueError, OverflowError):
-                pass
-            return ""
+        # Prefer real start_timestamp/stop_timestamp. If Xtream omitted them,
+        # use the programme's start and stop/end and the known panel timezone.
+        beginning = _provider_time(row, "start_timestamp", "start", zone)
+        ending = (_provider_time(row, "stop_timestamp", "stop", zone)
+                  or _provider_time(row, "stop_timestamp", "end", zone))
+        if beginning and ending and beginning < ending:
+            epg_start, epg_end = _iso(beginning), _iso(ending)
+        else:
+            epg_start, epg_end = "", ""  # no invented broadcast time
 
         matches.append({"epgTitle": title,
-                        "epgStart": from_unix("start_timestamp"),
-                        "epgEnd": from_unix("stop_timestamp")})
+                        "epgStart": epg_start, "epgEnd": epg_end})
     return matches[0] if len(matches) == 1 else None
 
 
