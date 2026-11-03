@@ -1,7 +1,7 @@
 {
   "name": "IPTVnator Live Companion",
   "identifier": "io.github.olivergiangvu.iina.iptvnatorlivecompanion",
-  "version": "0.1.2-rc.1",
+  "version": "0.1.2-rc.2",
   "description": "Dynamic Live EPG and channel artwork plus Xtream Catch-up selected-programme metadata.",
   "author": {
     "name": "Oliver Giang Vu"
