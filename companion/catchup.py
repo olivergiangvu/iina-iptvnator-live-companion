@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import closing
+from threading import Lock
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -251,3 +252,84 @@ def resolve_archive(db_path: Path, stream: int, title: str,
         _CACHE.clear()
     _CACHE[key] = (time.monotonic(), result)
     return result
+
+
+# Live schedule cache stores a programme LIST rather than one now-playing item.
+# That permits local clock transitions even if IPTVnator's Remote API is stale.
+_LIVE_CACHE: dict[tuple[str, int], tuple[float, list[dict]]] = {}
+_LIVE_CACHE_LOCK = Lock()
+_LIVE_TTL = 300.0
+_LIVE_NEGATIVE_TTL = 40.0
+
+
+def _provider_time(row: dict, timestamp_key: str, clock_key: str,
+                   zone: dt.tzinfo | None) -> dt.datetime | None:
+    """Prefer unambiguous Xtream Unix timestamps; never guess a naive timezone."""
+    try:
+        raw = int(row.get(timestamp_key, 0))
+        if 946684800 <= raw <= 4102444800:
+            return dt.datetime.fromtimestamp(raw, tz=dt.timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        pass
+    clock = str(row.get(clock_key) or "").strip()
+    if not clock:
+        return None
+    try:
+        value = dt.datetime.fromisoformat(clock.replace("Z", "+00:00"))
+        if value.tzinfo is None:
+            if zone is None:
+                return None
+            value = value.replace(tzinfo=zone)
+        return value.astimezone(dt.timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _live_schedule(rows: list[dict], zone: dt.tzinfo | None) -> list[dict]:
+    schedule: list[dict] = []
+    for row in rows:
+        begin = _provider_time(row, "start_timestamp", "start", zone)
+        end = _provider_time(row, "stop_timestamp", "stop", zone)
+        if end is None:
+            end = _provider_time(row, "stop_timestamp", "end", zone)
+        title = _decode_title(row.get("title"))
+        if not (begin and end and begin < end and title):
+            continue
+        schedule.append({"epgTitle": title, "epgStart": _iso(begin),
+                         "epgEnd": _iso(end), "_start": begin, "_end": end})
+    return sorted(schedule, key=lambda item: item["_start"])
+
+
+def resolve_live(db_path: Path, stream: int, channel_title: str,
+                 at: dt.datetime | None = None) -> tuple[dict, str] | None:
+    """Read the configured provider's schedule, select airing item by clock.
+
+    A cached schedule is evaluated with the current time on EVERY poll, even
+    when no network request occurs. No Xtream credentials leave this server.
+    """
+    now = at or dt.datetime.now(dt.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=dt.timezone.utc)
+    now = now.astimezone(dt.timezone.utc)
+    source = _source(db_path, stream, channel_title)
+    if not source:
+        return None
+    key = (source["playlist"], stream)
+    instant = time.monotonic()
+    with _LIVE_CACHE_LOCK:
+        cached = _LIVE_CACHE.get(key)
+    if cached and instant - cached[0] < (
+            _LIVE_TTL if cached[1] else _LIVE_NEGATIVE_TTL):
+        schedule = cached[1]
+    else:
+        schedule = _live_schedule(_provider_rows(source, stream), source["zone"])
+        with _LIVE_CACHE_LOCK:
+            if len(_LIVE_CACHE) >= 32:
+                _LIVE_CACHE.clear()
+            _LIVE_CACHE[key] = (time.monotonic(), schedule)
+    current = [p for p in schedule if p["_start"] <= now < p["_end"]]
+    if len(current) != 1:
+        return None
+    selected = current[0]
+    return ({k: selected[k] for k in ("epgTitle", "epgStart", "epgEnd")},
+            "live-provider")
