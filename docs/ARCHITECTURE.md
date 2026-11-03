@@ -1,18 +1,32 @@
-# Design notes / test gates
+# Architecture — IPTVnator Live Companion v0.1.2
 
-**Isolation and rollback:** Wrapper is exact v1.1, zero modifications. Companion is a separately installed LaunchAgent, with a separate plugin identity. No writes to IPTVnator database and no modifications to the IINA installation or EP+ plugin sources. A disabled companion yields static original title, never breaks video playback.
+## Data flow
 
-**EPG title:** `http://127.0.0.1:8765/api/remote-control/status` carries a new `epgStart` when a same-name episode boundary occurs. Plugin signature includes channel + EPG title + start + end; display title includes programme time to force media-title change for same-name repeats. All times shown in the Mac's local timezone.
+    IPTVnator (Xtream playlist, SQLite, Remote API :8765)
+        ├─ Original external VLC → IINA wrapper v1.1 → IINA/mpv playback
+        └─ Local EPG / logo metadata
+                  ↓
+    Python Companion (loopback :8766; read-only SQLite)
+        ├─ Live: current clock-validated Remote EPG
+        │        else current XMLTV; else cached Xtream provider schedule
+        ├─ Catch-up: archived programme by selected timeshift start
+        │            via historical XMLTV or Xtream provider EPG
+        └─ Artwork: safe fetch, bounded in-memory cache, opaque black PNG
+                  ↓
+    IINA Live Companion plugin (10-second polling)
+        ├─ Verify numeric stream ID and channel launch title
+        ├─ File-local mpv title: channel · show (local HH:mm–HH:mm)
+        └─ mpv attached-picture track for native macOS Now Playing
 
-**Artwork:** Query `content` (type `live`, stream `xtream_id`) and validate title against active remote status. Proxy image with no credentials exposed to plugin, download into IINA plugin `@tmp`, `mpv.command('video-add', [path, 'auto+attached-picture', title])`, preserve original `vid`; verify track is albumart. This mirrors EP+ experimental native Now Playing proof of concept.
+## Invariants
 
-**Expected v0.1 limitations:** no source provider ID mapping beyond stream_id + channelName; no dynamic programme poster (logo stays for channel); missing local SQLite `content` causes safe no-op; public logo only; image downloaded on first match; native Control Center/PiP behavior not testable outside macOS. MPV track changes during Live require on-device validation.
+- No modifications to the v1.1 VLC → IINA wrapper, playback/codec, PiP or other IINA plugins.
+- No writes to IPTVnator SQLite. All source credentials and URLs remain server-side.
+- Companion only binds localhost, with bounded provider EPG and image fetching.
+- Live uses the actual time to transition independently of IPTVnator UI; Catch-up remains fixed to selected archive programme.
+- When guide times/timezone are unavailable or ambiguous, do not invent dates.
+- The optional experimental native Control Center refresh remains disabled by default.
 
-**Acceptance tests on real Mac:**
-1. Current untouched wrapper SHA-256 matches source repo snapshot.
-2. Companion health `dbExists=true`; `/status?stream_id=...` returns `matched=true`, `hasLogo=true` on current channel.
-3. IINA PiP/video does not switch to still artwork after `video-add` (the plugin restores `vid` if necessary).
-4. IINA native Now Playing displays *channel logo*; EP+ still displays VOD posters when VOD playback.
-5. EPG boundary, including two sequential Storage Wars episodes, updates Now Playing title without restarting the stream.
-6. Changing channels causes new matching logo/title; closing IINA or switching to VOD stops updates.
-7. Disabling plugin or uninstalling companion causes normal native playback without modifications.
+## Verification
+
+See [release acceptance](CATCHUP_FIX_TEST.md), [security](../SECURITY.md), and GitHub Actions.
