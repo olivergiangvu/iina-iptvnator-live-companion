@@ -34,6 +34,8 @@ jobs:
           node tests/test_catchup.cjs
           node tests/test_archive_plugin.cjs
           node tests/test_latency.cjs
+      - name: Paired launcher installer regression
+        run: bash tests/test_launcher.sh
       - name: Original wrapper integrity
         run: echo '12d9be1a61f3aa8545de853df479c4c8d18979e2909b244f7248e1237550f623  companion/iptvnator-iina-vlc' | sha256sum -c
 
