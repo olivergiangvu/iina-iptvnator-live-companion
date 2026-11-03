@@ -1,4 +1,7 @@
-## 0.1.2-rc.1 — Unreleased Catch-up regression fix
+## 0.1.2-rc.2 — Unreleased Catch-up and Live regression fix
+
+- Restore Live TV and Catch-up metadata sync by removing reliance on browser `URL` / `URLSearchParams` globals inside IINA's JS runtime.
+- Add runtime regression tests without `URL` injected into IINA sandbox; confirm VOD isolation and legacy/REST Catch-up.
 
 - Recognize REST `/timeshift/.../streamId.ts` and legacy `/streaming/timeshift.php?stream=...` URLs.
 - Accept `Channel - Selected Programme` Catch-up titles sent by IPTVnator.
