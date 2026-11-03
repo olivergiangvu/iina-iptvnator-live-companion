@@ -53,7 +53,29 @@ curl -fsS http://127.0.0.1:8766/health | python3 -m json.tool
 
 In **IINA → Settings → Plugins**, install `dist/IPTVnator-Live-Companion-0.1.2.iinaplgz` and restart IINA. Enable only one version of this plugin. Set IPTVnator's **External Player → VLC executable** to `$HOME/.local/bin/iptvnator-iina-vlc` (use your Mac's absolute home directory). The launcher installer **never overwrites an existing file**. Keep existing working setups unchanged.
 
-The [v0.1.2 GitHub Release](https://github.com/olivergiangvu/iina-iptvnator-live-companion/releases/tag/v0.1.2) provides **two separate downloadable files**: the IINA plugin `.iinaplgz` and the exact v1.1 standalone `iptvnator-iina-vlc` launcher. The Python metadata service is installed from repository source. The two downloads are deliberately separate because the plugin package cannot install a shell launcher under `~/.local/bin`.
+The [v0.1.2 GitHub Release](https://github.com/olivergiangvu/iina-iptvnator-live-companion/releases/tag/v0.1.2) provides **three separate downloads**: the IINA plugin `.iinaplgz`, the byte-identical v1.1 `iptvnator-iina-vlc` launcher and the standalone Python Metadata Companion source archive `.tar.gz`. For a new deployment without Git, extract the metadata archive to a permanent directory and run its `scripts/install-companion.sh` **once**. The plugin ZIP cannot install a background Python service or shell launcher. See [Python Metadata Companion install/update guide](docs/METADATA_COMPANION.md).
+
+## Python Metadata Companion — official lifecycle
+
+The Python companion is a **macOS LaunchAgent**, not a standalone `.app`.
+Its installer is run only on first deployment; macOS starts the service
+automatically on login and keeps it running.
+
+For the existing Git-based installation, **do not reinstall** the LaunchAgent
+on every version. Update the tracked source and restart the service:
+
+```bash
+cd "$HOME/Developer/iina-iptvnator-live-companion"
+git switch main && git pull --ff-only
+./scripts/upgrade-companion.sh
+curl -fsS http://127.0.0.1:8766/health | python3 -m json.tool
+```
+
+The official `IPTVnator-Metadata-Companion-0.1.2.tar.gz` asset makes the Python
+source and lifecycle scripts independently downloadable, but does **not**
+silently update an existing Git-based installation or change its LaunchAgent
+path. Updates remain explicit and version-tested. Details and rollback:
+[Metadata Companion lifecycle](docs/METADATA_COMPANION.md).
 
 ## Upgrade from v0.1.1 / RC builds
 
@@ -115,6 +137,7 @@ node tests/test_plugin.cjs
 node tests/test_catchup.cjs
 node tests/test_archive_plugin.cjs
 node tests/test_latency.cjs
+python3 scripts/package-companion.py
 bash tests/test_launcher.sh
 python3 scripts/package-plugin.py
 ```
