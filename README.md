@@ -1,6 +1,6 @@
-> **v0.1.2-rc.1 Catch-up test candidate (PR only; not released).** Restores IPTVnator Catch-up EPG title and channel artwork for both Xtream REST `/timeshift/...` and legacy `/streaming/timeshift.php` URL formats. Existing Live TV, VOD/EP+/Trakt, and wrapper v1.1 remain unchanged.
+> **v0.1.2-rc.2 Catch-up + IINA JavaScript runtime fix candidate (PR only; not released).** Restores IPTVnator Catch-up EPG title and channel artwork for both Xtream REST `/timeshift/...` and legacy `/streaming/timeshift.php` URL formats. Existing Live TV, VOD/EP+/Trakt, and wrapper v1.1 remain unchanged.
 >
-> **Test on Mac:** `cd ~/Developer/iina-iptvnator-live-companion && git fetch origin && git switch fix/catchup-metadata-v0.1.2 && python3 scripts/package-plugin.py && ./scripts/upgrade-companion.sh`. Replace only the IINA Live Companion plugin with `dist/IPTVnator-Live-Companion-0.1.2-rc.1.iinaplgz`, then restart IINA. To roll back: `git switch main && ./scripts/upgrade-companion.sh`, then reinstall the v0.1.1 plugin from the public release. **Do not re-run `publish-public.sh`.**
+> **Test on Mac:** `cd ~/Developer/iina-iptvnator-live-companion && git fetch origin && git switch fix/catchup-metadata-v0.1.2 && python3 scripts/package-plugin.py && ./scripts/upgrade-companion.sh`. Replace only the IINA Live Companion plugin with `dist/IPTVnator-Live-Companion-0.1.2-rc.2.iinaplgz`, then restart IINA. To roll back: `git switch main && ./scripts/upgrade-companion.sh`, then reinstall the v0.1.1 plugin from the public release. **Do not re-run `publish-public.sh`.**
 
 # IPTVnator Live Companion — v0.1.1 Public Beta
 
