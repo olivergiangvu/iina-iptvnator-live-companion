@@ -1,0 +1,76 @@
+name: Publish v0.1.2 stable
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate stable version and release notes
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          v = json.loads(pathlib.Path('Info.json').read_text())['version']
+          assert v == '0.1.2', f'Not stable version: {v}'
+          assert '0.1.2' in pathlib.Path('docs/RELEASE_NOTES_v0.1.2.md').read_text()
+          PY
+      - name: Python tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: IINA JavaScript tests
+        run: |
+          node tests/test_plugin.cjs
+          node tests/test_catchup.cjs
+          node tests/test_archive_plugin.cjs
+          node tests/test_latency.cjs
+      - name: Original wrapper integrity
+        run: echo '12d9be1a61f3aa8545de853df479c4c8d18979e2909b244f7248e1237550f623  companion/iptvnator-iina-vlc' | sha256sum -c
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Avoid replacing an existing stable release
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.1.2 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Existing v0.1.2 release preserved"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build stable IINA plugin asset
+        if: steps.gate.outputs.publish == 'true'
+        run: |
+          python3 scripts/package-plugin.py
+          python3 - <<'PY'
+          import json, pathlib, zipfile
+          p=pathlib.Path('dist/IPTVnator-Live-Companion-0.1.2.iinaplgz')
+          assert p.is_file()
+          with zipfile.ZipFile(p) as z:
+              assert set(z.namelist()) == {'Info.json','main.js'}
+              assert json.loads(z.read('Info.json'))['version'] == '0.1.2'
+          print('Stable IINA plugin package verified')
+          PY
+      - name: Publish stable GitHub Release and plugin asset
+        if: steps.gate.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.1.2             dist/IPTVnator-Live-Companion-0.1.2.iinaplgz             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "v0.1.2 — Stable"             --notes-file docs/RELEASE_NOTES_v0.1.2.md             --latest
