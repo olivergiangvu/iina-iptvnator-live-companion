@@ -53,7 +53,7 @@ curl -fsS http://127.0.0.1:8766/health | python3 -m json.tool
 
 In **IINA → Settings → Plugins**, install `dist/IPTVnator-Live-Companion-0.1.2.iinaplgz` and restart IINA. Enable only one version of this plugin. Set IPTVnator's **External Player → VLC executable** to `$HOME/.local/bin/iptvnator-iina-vlc` (use your Mac's absolute home directory). The launcher installer **never overwrites an existing file**. Keep existing working setups unchanged.
 
-Alternatively, download the official release plugin package `.iinaplgz` from [v0.1.2](https://github.com/olivergiangvu/iina-iptvnator-live-companion/releases/tag/v0.1.2), but the companion still needs to be installed from the source repository.
+The [v0.1.2 GitHub Release](https://github.com/olivergiangvu/iina-iptvnator-live-companion/releases/tag/v0.1.2) provides **two separate downloadable files**: the IINA plugin `.iinaplgz` and the exact v1.1 standalone `iptvnator-iina-vlc` launcher. The Python metadata service is installed from repository source. The two downloads are deliberately separate because the plugin package cannot install a shell launcher under `~/.local/bin`.
 
 ## Upgrade from v0.1.1 / RC builds
 
