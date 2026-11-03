@@ -1,0 +1,29 @@
+name: Attach paired launcher v1.1 to stable release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  attach-launcher:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify original launcher source and safe installer
+        run: |
+          echo '12d9be1a61f3aa8545de853df479c4c8d18979e2909b244f7248e1237550f623  companion/iptvnator-iina-vlc' | sha256sum -c
+          bash tests/test_launcher.sh
+      - name: Publish standalone launcher alongside IINA plugin asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.1.2 --repo "$GITHUB_REPOSITORY" >/dev/null
+          if gh release view v0.1.2 --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq 'iptvnator-iina-vlc'; then
+            echo 'Launcher v1.1 release asset already exists; leaving it unchanged.'
+          else
+            gh release upload v0.1.2 companion/iptvnator-iina-vlc --repo "$GITHUB_REPOSITORY"
+            echo 'Attached unmodified IPTVnator → IINA launcher v1.1 to v0.1.2 release.'
+          fi
