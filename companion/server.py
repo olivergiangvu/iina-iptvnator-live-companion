@@ -157,7 +157,7 @@ def download_image(url: str) -> tuple[bytes, str] | None:
         return None
     try:
         opener = urllib.request.build_opener(SafeImageRedirect())
-        request = urllib.request.Request(url, headers={"User-Agent": "IPTVnatorLiveCompanion/0.1.1"})
+        request = urllib.request.Request(url, headers={"User-Agent": "IPTVnatorLiveCompanion/0.1.2-rc.1"})
         with opener.open(request, timeout=8) as res:
             raw_content_type = res.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
             if raw_content_type not in ("image/jpeg", "image/png", "image/webp"):
@@ -199,7 +199,7 @@ def catchup_program_title(channel_title: str, launch_title: str) -> str:
 
 
 class CompanionHandler(BaseHTTPRequestHandler):
-    server_version = "IPTVnatorLiveCompanion/0.1.1"
+    server_version = "IPTVnatorLiveCompanion/0.1.2-rc.1"
     sys_version = ""
 
     def log_message(self, fmt, *args):
@@ -244,7 +244,7 @@ class CompanionHandler(BaseHTTPRequestHandler):
         u = urllib.parse.urlsplit(self.path)
         if u.path == "/health":
             return self.json_response(200, {"ok": True, "dbExists": self.server.database_path.is_file(),
-                                            "version": "0.1.1"})
+                                            "version": "0.1.2-rc.1"})
         if u.path not in ("/status", "/logo"):
             return self.json_response(404, {"error": "not found"})
         params = urllib.parse.parse_qs(u.query)
