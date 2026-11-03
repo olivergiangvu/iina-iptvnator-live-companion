@@ -1,8 +1,8 @@
 {
   "name": "IPTVnator Live Companion",
   "identifier": "io.github.olivergiangvu.iina.iptvnatorlivecompanion",
-  "version": "0.1.2-rc.5",
-  "description": "Automatic Live EPG programme transitions independent of IPTVnator UI; archived Catch-up and artwork.",
+  "version": "0.1.2-rc.6",
+  "description": "Live EPG automatic updates, fast artwork and Catch-up broadcast-time metadata.",
   "author": {
     "name": "Oliver Giang Vu"
   },
