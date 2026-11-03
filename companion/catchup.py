@@ -318,8 +318,13 @@ def resolve_live(db_path: Path, stream: int, channel_title: str,
     instant = time.monotonic()
     with _LIVE_CACHE_LOCK:
         cached = _LIVE_CACHE.get(key)
-    if cached and instant - cached[0] < (
-            _LIVE_TTL if cached[1] else _LIVE_NEGATIVE_TTL):
+    cached_active = bool(cached and any(
+        item["_start"] <= now < item["_end"] for item in cached[1]))
+    # If provider returned only the previous show, refresh at the boundary
+    # instead of holding a now-empty schedule for five minutes.
+    reuse = bool(cached and instant - cached[0] < (
+        _LIVE_TTL if cached_active else _LIVE_NEGATIVE_TTL))
+    if reuse:
         schedule = cached[1]
     else:
         schedule = _live_schedule(_provider_rows(source, stream), source["zone"])
