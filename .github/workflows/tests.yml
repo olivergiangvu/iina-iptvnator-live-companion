@@ -43,7 +43,7 @@ jobs:
           echo '12d9be1a61f3aa8545de853df479c4c8d18979e2909b244f7248e1237550f623  companion/iptvnator-iina-vlc' | sha256sum -c
 
       - name: Package and verify Metadata Companion canary
-        if: github.ref == 'refs/heads/fix/aiostreams-catchup-epg-provider-binding-20261115'
+        if: github.head_ref == 'fix/aiostreams-catchup-epg-provider-binding-20261115' || github.ref == 'refs/heads/fix/aiostreams-catchup-epg-provider-binding-20261115'
         run: |
           python3 scripts/package-companion.py
           python3 - <<'PY'
@@ -55,7 +55,7 @@ jobs:
           print('Metadata Companion canary verified')
           PY
       - name: Upload paired Catch-up canary packages
-        if: github.ref == 'refs/heads/fix/aiostreams-catchup-epg-provider-binding-20261115'
+        if: github.head_ref == 'fix/aiostreams-catchup-epg-provider-binding-20261115' || github.ref == 'refs/heads/fix/aiostreams-catchup-epg-provider-binding-20261115'
         uses: actions/upload-artifact@v4
         with:
           name: IINA-IPTVnator-Catchup-Canary-v0.1.3-beta.1
