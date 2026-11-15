@@ -67,13 +67,23 @@ function playbackIdentityFromUrl(url) {
   return live && Number(live[1]) > 0
     ? { streamId: live[1], mode: "live" } : null;
 }
-function companionUrl(endpoint, identity, launchTitle) {
+// An Xtream archive launched by AIOStreams may expose only the programme title.
+// Send the provider HOST (never username/password/URL) to the localhost resolver.
+function providerHost(url) {
+  const match = /^https?:\/\/([^/?#]+)/i.exec(String(url || ""));
+  if (!match) return "";
+  const host = match[1].toLowerCase().replace(/:\d+$/, "");
+  return /^[a-z0-9.-]{1,253}$/.test(host) && !host.includes("..") ? host : "";
+}
+function companionUrl(endpoint, identity, launchTitle, playbackUrl) {
   const id = encodeURIComponent(identity.streamId);
   const mode = encodeURIComponent(identity.mode);
   const hint = encodeURIComponent(launchTitle || "");
   const start = identity.mode === "catchup" && identity.archiveStart
     ? "&archive_start=" + encodeURIComponent(identity.archiveStart) : "";
-  return API + "/" + endpoint + "?stream_id=" + id + "&playback=" + mode + "&title_hint=" + hint + start;
+  const host = identity.mode === "catchup" ? providerHost(playbackUrl) : "";
+  const provider = host ? "&provider_host=" + encodeURIComponent(host) : "";
+  return API + "/" + endpoint + "?stream_id=" + id + "&playback=" + mode + "&title_hint=" + hint + start + provider;
 }
 function signature(obj) {
   return [obj.channelName || "", obj.epgStart || "", obj.epgEnd || "", obj.epgTitle || ""].join("\u001f");
@@ -142,7 +152,7 @@ async function applyArtwork(info, identity, token) {
   artworkInFlightGeneration = token;
   const ext = [".png", ".jpg"].includes(info.logoExt) ? info.logoExt : ".img";
   const temp = `@tmp/iptvnator-logo-${Date.now()}-${token}${ext}`;
-  const logoURL = companionUrl("logo", identity, initialMediaTitle);
+  const logoURL = companionUrl("logo", identity, initialMediaTitle, currentUrl);
   try {
     await limited(http.download(logoURL, temp), 11000);
     if (generation !== token || getUrl() !== currentUrl) return;
@@ -245,7 +255,7 @@ async function poll() {
   const ticket = generation;
   polling = true;
   try {
-    const statusURL = companionUrl("status", identity, initialMediaTitle);
+    const statusURL = companionUrl("status", identity, initialMediaTitle, currentUrl);
     const data = parseResponse(await limited(http.get(statusURL, {}), 7000));
     if (generation !== ticket || getUrl() !== url) return;
     if (!data || !data.matched || !data.isLiveView) {
