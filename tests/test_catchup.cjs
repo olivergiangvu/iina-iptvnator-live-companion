@@ -28,6 +28,7 @@ async function check(url,shouldPoll=true) {
   assert.equal(u.searchParams.get('playback'),'catchup');
   assert.equal(u.searchParams.get('stream_id'),'120');
   assert.equal(u.searchParams.get('title_hint'),title);
+  assert.equal(u.searchParams.get('provider_host'),'example.invalid');
   assert(!requests.join('').includes('PASSWORD'));
   assert(actions.some(a=>a[0]==='file-local-options/force-media-title'&&a[1]==='US: MeTV Toons · The Jetsons'));
   assert(actions.some(a=>a[0]==='video-add'&&a[1][1]==='auto+attached-picture'));
