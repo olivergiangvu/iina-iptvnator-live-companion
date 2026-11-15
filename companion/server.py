@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import ipaddress
 import json
+import re
 import socket
 import threading
 import time
@@ -67,13 +68,55 @@ def _hint_matches(title: str, hint: str) -> bool:
            any(hint.startswith(title + sep) for sep in (" · ", " | ", " — ", " - "))))
 
 
-def lookup_channel(db_path: Path, stream: int, name: str = "", title_hint: str = "") -> dict | None:
+def lookup_provider_channel(db_path: Path, stream: int, provider_host: str) -> dict | None:
+    """Catch-up only: host + stream ID must resolve to ONE IPTVnator playlist/channel.
+
+    Host is untrusted input used solely for comparison to local SQLite, never
+    for requests. No URL/credentials cross localhost and no ID-only guessing.
+    """
+    host = provider_host.strip().lower()
+    if (not host or len(host) > 253 or ".." in host or
+            not re.fullmatch(r"[a-z0-9.-]+", host) or not db_path.is_file()):
+        return None
+    try:
+        with closing(sqlite3.connect(_db_uri(db_path), uri=True, timeout=1.0)) as db:
+            rows = db.execute("""
+                SELECT p.id, p.serverUrl, c.title, c.poster_url, c.epg_channel_id
+                FROM content AS c
+                JOIN categories AS cat ON cat.id = c.category_id
+                JOIN playlists AS p ON p.id = cat.playlist_id
+                WHERE c.type='live' AND c.xtream_id=? LIMIT 151
+            """, (stream,)).fetchall()
+        if len(rows) > 150:
+            return None
+        matching = []
+        for playlist_id, server_url, title, logo, epg_id in rows:
+            try:
+                base = str(server_url or "")
+                parsed = urllib.parse.urlsplit(
+                    base if "://" in base else "http://" + base)
+                same = (parsed.hostname or "").lower() == host
+            except ValueError:
+                same = False
+            if same and str(title or "").strip():
+                matching.append((str(playlist_id), str(title).strip(),
+                                 str(logo or "").strip(), str(epg_id or "").strip()))
+        if len(set(matching)) != 1:
+            return None
+        _, title, logo, epg_id = matching[0]
+        return {"title": title, "logo": logo, "epg_id": epg_id}
+    except (sqlite3.DatabaseError, sqlite3.OperationalError, OSError):
+        return None
+
+
+def lookup_channel(db_path: Path, stream: int, name: str = "", title_hint: str = "",
+                   provider_host: str = "") -> dict | None:
     """Identity = Xtream numeric ID + launch title hint or active Remote name.
 
     Never accept an ID alone: several playlists can reuse the same Xtream IDs.
     On ambiguous duplicate IDs with distinct logos/EPG ids, refuse matching.
     """
-    if not db_path.is_file() or (not name and not title_hint):
+    if not db_path.is_file() or (not name and not title_hint and not provider_host):
         return None
     try:
         with closing(sqlite3.connect(_db_uri(db_path), uri=True, timeout=1.0)) as db:
@@ -85,7 +128,7 @@ def lookup_channel(db_path: Path, stream: int, name: str = "", title_hint: str =
                    (_hint_matches(str(t or ""), title_hint) if title_hint else
                     bool(name and str(t or "").strip().casefold() == name.strip().casefold()))]
         if not matches:
-            return None
+            return lookup_provider_channel(db_path, stream, provider_host) if provider_host else None
         identities = {(str(t or "").strip().casefold(), str(p or "").strip(),
                        str(e or "").strip()) for t, p, e in matches}
         if len(identities) > 1:
@@ -266,17 +309,25 @@ class CompanionHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def state(self, stream: int, hint: str, playback: str = "live",
-              archive_start: str = "") -> tuple[dict, dict | None]:
+              archive_start: str = "", provider_host: str = "") -> tuple[dict, dict | None]:
         remote = remote_status() or {}
         remote_name = str(remote.get("channelName") or "") if (
             remote.get("isLiveView") and remote.get("portal") == "xtream") else ""
-        channel = lookup_channel(self.server.database_path, stream, remote_name, hint)
+        channel = lookup_channel(self.server.database_path, stream, remote_name, hint,
+                                 provider_host if playback == "catchup" else "")
         if not channel:
             return {"isLiveView": True, "source": "unmatched"}, None
         if playback == "catchup":
             # The archived title is supplied by IPTVnator when opening the stream.
             # Do not overwrite with live Remote API "EPG Now" or current-time SQLite.
             selected_program = catchup_program_title(channel["title"], hint)
+            # AIOStreams can send a bare programme title, unlike IPTVnator's
+            # decorated "Channel - Programme". Only use it as display metadata
+            # after the unique provider-host/channel binding above succeeds.
+            if (not selected_program and provider_host and hint and
+                    not _hint_matches(channel["title"], hint) and
+                    not re.fullmatch(r"\d{1,15}\.(?:ts|m3u8)", hint, re.I)):
+                selected_program = hint[:160]
             epg = {"epgTitle": selected_program, "epgStart": "", "epgEnd": ""}
             epg_source = "catchup-title" if selected_program else "catchup-channel"
             if archive_start:
@@ -335,15 +386,17 @@ class CompanionHandler(BaseHTTPRequestHandler):
         if stream is None:
             return self.json_response(400, {"error": "invalid stream_id"})
         archive_start = params.get("archive_start", [""])[0].strip()[:24]
+        provider_host = params.get("provider_host", [""])[0].strip().lower()[:254]
         if u.path == "/logo" and hint:
             # Artwork identity requires only stream ID + launch channel name.
             # No EPG polling, provider archive lookup or 2.5s Remote API wait.
-            channel = lookup_channel(self.server.database_path, stream, title_hint=hint)
+            channel = lookup_channel(self.server.database_path, stream, title_hint=hint,
+                                     provider_host=provider_host if playback == "catchup" else "")
             if not channel:
-                _, channel = self.state(stream, hint, playback, archive_start)
+                _, channel = self.state(stream, hint, playback, archive_start, provider_host)
             status = {}
         else:
-            status, channel = self.state(stream, hint, playback, archive_start)
+            status, channel = self.state(stream, hint, playback, archive_start, provider_host)
         matched = bool(channel)
         if u.path == "/status":
             return self.json_response(200, {
