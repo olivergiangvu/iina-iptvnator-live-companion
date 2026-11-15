@@ -21,14 +21,14 @@ class CompanionDistributionTests(unittest.TestCase):
     def test_archive_includes_service_and_installer_only(self):
         path = packager.build()
         self.assertTrue(path.is_file())
-        self.assertEqual(path.name, "IPTVnator-Metadata-Companion-0.1.2.tar.gz")
-        prefix = "IPTVnator-Metadata-Companion-0.1.2/"
+        self.assertEqual(path.name, "IPTVnator-Metadata-Companion-0.1.3-beta.1.tar.gz")
+        prefix = "IPTVnator-Metadata-Companion-0.1.3-beta.1/"
         with tarfile.open(path, mode="r:gz") as archive:
             expected = {prefix + rel for rel in packager.FILES}
             expected.add(prefix + "manifest.json")
             self.assertEqual(set(archive.getnames()), expected)
             manifest = json.load(archive.extractfile(prefix + "manifest.json"))
-            self.assertEqual(manifest["version"], "0.1.2")
+            self.assertEqual(manifest["version"], "0.1.3-beta.1")
             for rel in packager.FILES:
                 member = archive.getmember(prefix + rel)
                 contents = archive.extractfile(member).read()
