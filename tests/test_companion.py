@@ -55,6 +55,55 @@ class CompanionTests(unittest.TestCase):
     def url(self, suffix):
         return f'http://127.0.0.1:{self.httpd.server_port}{suffix}'
 
+
+    def test_aio_catchup_bare_program_title_bound_to_unique_provider(self):
+        # The AIO app hands IINA a numeric .ts stream + bare EPG title.
+        # Host + numeric ID must bind to exactly one configured playlist.
+        with sqlite3.connect(self.db_path) as db:
+            db.executescript("""
+                ALTER TABLE content ADD COLUMN category_id INTEGER;
+                CREATE TABLE playlists (id TEXT, serverUrl TEXT);
+                CREATE TABLE categories (id INTEGER, playlist_id TEXT);
+                INSERT INTO playlists VALUES ('meteor', 'https://meteor.show');
+                INSERT INTO categories VALUES (7, 'meteor');
+                UPDATE content SET category_id=7 WHERE id=1;
+            """)
+        programme = ({'epgTitle': 'Man Fire Food',
+                      'epgStart': '2026-11-15T08:00:00Z',
+                      'epgEnd': '2026-11-15T08:30:00Z'}, 'catchup-sqlite')
+        with patch.object(server, 'resolve_archive', return_value=programme), \
+             patch.object(server, 'remote_status', return_value={}):
+            suffix = ('/status?stream_id=120&playback=catchup&'
+                      'title_hint=Man%20Fire%20Food&provider_host=meteor.show&'
+                      'archive_start=2026-11-15%3A15-00')
+            found = json.load(urllib.request.urlopen(self.url(suffix)))
+            self.assertTrue(found['matched'])
+            self.assertEqual(found['channelName'], 'US: A&E East')
+            self.assertEqual(found['epgTitle'], 'Man Fire Food')
+            self.assertEqual(found['epgStart'], programme[0]['epgStart'])
+            self.assertEqual(found['mode'], 'catchup')
+            self.assertEqual(found['source'], 'catchup-title-scheduled')
+            # Unknown provider / missing provider / live fallback must never guess.
+            wrong = json.load(urllib.request.urlopen(self.url(
+                suffix.replace('meteor.show', 'other.example'))))
+            self.assertFalse(wrong['matched'])
+            absent = json.load(urllib.request.urlopen(self.url(
+                suffix.replace('&provider_host=meteor.show', ''))))
+            self.assertFalse(absent['matched'])
+            live = json.load(urllib.request.urlopen(self.url(
+                suffix.replace('playback=catchup', 'playback=live'))))
+            self.assertFalse(live['matched'])
+
+        # Another account on the same Xtream server reusing stream ID is ambiguous.
+        with sqlite3.connect(self.db_path) as db:
+            db.executescript("""
+                INSERT INTO playlists VALUES ('another', 'https://meteor.show');
+                INSERT INTO categories VALUES (8, 'another');
+                INSERT INTO content (id, title, poster_url, type, xtream_id, epg_channel_id, category_id)
+                VALUES (10, 'US: Different Channel', '', 'live', 120, 'OTHER', 8);
+            """)
+        self.assertIsNone(server.lookup_provider_channel(self.db_path, 120, 'meteor.show'))
+
     def test_lookup_exact_stream_name(self):
         self.assertEqual(server.lookup_channel(self.db_path, 120, 'us: a&e east')['title'], 'US: A&E East')
         self.assertIsNone(server.lookup_channel(self.db_path, 120, 'US: Cartoon Network'))
