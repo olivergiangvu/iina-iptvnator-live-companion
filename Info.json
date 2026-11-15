@@ -1,7 +1,7 @@
 {
   "name": "IPTVnator Live Companion",
   "identifier": "io.github.olivergiangvu.iina.iptvnatorlivecompanion",
-  "version": "0.1.2",
+  "version": "0.1.3-beta.1",
   "description": "IINA Now Playing metadata for IPTVnator Xtream Live and Catch-up: EPG schedules, broadcast times and channel logos.",
   "author": {
     "name": "Oliver Giang Vu"
